@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>robo-game</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="ui-layer">
+      <div id="coordinates"><strong>XYZ:</strong> 0.00, 0.00, 0.00</div>
+      <div id="battery"><strong>Battery:</strong> 100%</div>
+      <div id="progress"><strong>Cleaned:</strong> 0 / 10000</div>
+      <div id="storage"><strong>Storage:</strong> 0 / 12</div>
+      <div id="status"><strong>Status:</strong> Ready</div>
+      <div id="action"><strong>Action:</strong> Press E to suction / scan</div>
+      <button id="reset-btn" style="pointer-events: auto; padding: 10px; margin-top: 10px; background: #fff; border: 1px solid #000; cursor: pointer; color: #000; border-radius: 5px; font-weight: bold;">Reset Positions</button>
+    </div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,37 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  font-family: Inter, system-ui, sans-serif;
+  background: #07111f;
+  color: #f4f7fb;
+}
+
+#ui-layer {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  z-index: 10;
+  min-width: 220px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(12, 22, 44, 0.82);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+
+#ui-layer div {
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+#ui-layer strong {
+  color: #a8d3ff;
+}
+
+#ui-layer .label {
+  font-size: 0.92rem;
+  opacity: 0.9;
+}
+
+#ui-layer .value {
+  font-weight: 700;
+}
