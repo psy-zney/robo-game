@@ -16,8 +16,6 @@ export class Rat {
   constructor() {
     this.model = assetManager.getModel('Rat');
     if (this.model) {
-      this.group.scale.setScalar(0.002); // Much smaller
-
       this.model.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
@@ -26,6 +24,22 @@ export class Rat {
         }
       });
       this.model.position.y = 0;
+
+      // Auto-scale the rat to a realistic target size (~12cm = 0.12 units tall)
+      // This is robust regardless of what scale the GLB was exported at
+      this.model.scale.setScalar(1); // reset first
+      this.model.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(this.model);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const dominantDim = Math.max(size.x, size.y, size.z);
+      const TARGET_RAT_SIZE = 0.12; // 12cm
+      if (dominantDim > 0) {
+        this.group.scale.setScalar(TARGET_RAT_SIZE / dominantDim);
+      } else {
+        this.group.scale.setScalar(0.002); // fallback
+      }
+
       this.group.add(this.model);
     }
   }

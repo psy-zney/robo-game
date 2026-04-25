@@ -8,8 +8,9 @@ import { assetManager } from './AssetManager';
 import { Husky } from '../entities/Husky';
 import { ObstacleSpawner } from '../systems/ObstacleSpawner';
 import { DirtSpawner } from '../systems/DirtSpawner';
+import { DustSpawner } from '../systems/DustSpawner';
 import {
-  MOVE_SPEED, SWEEP_SPEED, MOP_SPEED, HOME_SCALE, ROBOT_RADIUS,
+  MOVE_SPEED, SWEEP_SPEED, MOP_SPEED, HOME_SCALE,
   CHARGE_RATE, CHARGE_RADIUS,
   BATTERY_DRAIN_MOVE, BATTERY_DRAIN_SWEEP, BATTERY_DRAIN_MOP,
   HUSKY_BARK_CHANCE, HUSKY_RANDOM_BITE_BASE, MAX_BATTERY
@@ -19,6 +20,7 @@ import { Rat } from '../entities/Rat';
 // Fixed robot spawn / charge station position
 const ROBOT_SPAWN = { x: 2.146, y: -0.401, z: -0.474 };
 const HUSKY_SPAWN = { x: 0.337, y: -0.412, z: -1.868 };
+const CHARGE_STATION = { x: 4.0, z: -0.8 }; // Matches createChargeStation() position
 
 export class Engine {
   private scene = new THREE.Scene();
@@ -35,6 +37,7 @@ export class Engine {
   private audioManager = new AudioManager();
   private obstacleSpawner = new ObstacleSpawner();
   private dirtSpawner = new DirtSpawner();
+  private dustSpawner!: DustSpawner;
 
   // Floor Y level
   private floorY = 0;
@@ -79,6 +82,8 @@ export class Engine {
     this.setupRenderer();
     this.setupLights();
     this.setupScene();
+
+    this.dustSpawner = new DustSpawner(this.scene);
 
     this.gameState.init(100);
     this.gameState.battery = MAX_BATTERY;
@@ -144,7 +149,7 @@ export class Engine {
       new THREE.Vector3(-3.5, this.floorY, -3.5),
       new THREE.Vector3(3.5, this.floorY + 2, 3.5)
     );
-    const spawnedObstacles = this.obstacleSpawner.generateDailyRoom(1, this.floorY, spawnBounds);
+    const spawnedObstacles = this.obstacleSpawner.generateDailyRoom(1, this.floorY, spawnBounds, this.collidableMeshes);
     for (const obs of spawnedObstacles) {
       this.scene.add(obs.mesh);
     }
@@ -180,13 +185,14 @@ export class Engine {
     });
     this.chargeStationMesh = new THREE.Mesh(geo, mat);
     this.chargeStationMesh.rotation.x = -Math.PI / 2;
-    this.chargeStationMesh.position.set(ROBOT_SPAWN.x, this.floorY + 0.005, ROBOT_SPAWN.z);
+    this.chargeStationMesh.position.set(4.0, this.floorY + 0.005, -0.8);
     this.scene.add(this.chargeStationMesh);
   }
 
   /** Spawn dirt for Day N */
   private async spawnDirtForDay(day: number) {
     await this.dirtSpawner.spawnForDay(day, this.floorY, this.collidableMeshes);
+    this.dustSpawner.spawnForDay(day, this.floorY);
     const total = this.dirtSpawner.getTotalCount();
     this.gameState.totalCells = total;
     this.gameState.cleanedCells = 0;
@@ -231,12 +237,28 @@ export class Engine {
       if (pauseScreen) pauseScreen.classList.remove('active');
     }
 
+    const isPlayerInputMoving = this.input.state.forward || this.input.state.backward || this.input.state.left || this.input.state.right;
+    const isCleaning = this.input.state.suction || this.input.state.mop;
+
     // === Husky AI ===
-    this.husky.update(deltaTime, (origin, dir, dist) => {
-      this.raycaster.set(origin, dir);
-      const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
-      return intersects.length > 0 && intersects[0].distance < dist;
-    }, this.currentPosition);
+    this.husky.update(
+      deltaTime,
+      // Wall collision callback
+      (origin, dir, dist) => {
+        this.raycaster.set(origin, dir);
+        const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
+        return intersects.length > 0 && intersects[0].distance < dist;
+      },
+      // Line-of-sight callback: returns TRUE if a wall BLOCKS the path from->to
+      (from, to) => {
+        const dir = new THREE.Vector3().subVectors(to, from).normalize();
+        const dist = from.distanceTo(to);
+        this.raycaster.set(from, dir);
+        const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
+        return intersects.length > 0 && intersects[0].distance < dist;
+      },
+      this.currentPosition, isPlayerInputMoving, isCleaning
+    );
 
     // === Rat AI ===
     this.rat.update(deltaTime);
@@ -274,8 +296,8 @@ export class Engine {
       const dist = this.rayDir.length();
       if (dist > 0) {
         this.rayDir.normalize();
-        const STOP_DIST = 0.08;
-        const RAY_SPREAD = 0.14;
+        const STOP_DIST = 0.3; // Increased to ensure robust boundary and prevent wall clipping
+        const RAY_SPREAD = 0.2; // Slightly wider spread to catch corners
         const leftOffset1 = new THREE.Vector3(-this.rayDir.z, 0, this.rayDir.x).multiplyScalar(RAY_SPREAD);
         const rightOffset1 = new THREE.Vector3(this.rayDir.z, 0, -this.rayDir.x).multiplyScalar(RAY_SPREAD);
         const leftOffset2 = new THREE.Vector3(-this.rayDir.z, 0, this.rayDir.x).multiplyScalar(RAY_SPREAD * 0.5);
@@ -305,31 +327,32 @@ export class Engine {
     let hitHusky = false;
     const huskyDist = this.currentPosition.distanceTo(this.husky.group.position);
     
-    // Husky's actual body radius is ~0.2, robot radius is ROBOT_RADIUS.
-    if (huskyDist < ROBOT_RADIUS + 0.2) {
+    // Hard 18cm hitbox — prevents false collisions across large distances
+    // ROBOT_RADIUS (0.6) was intentionally NOT used here to avoid instant-death zones
+    if (huskyDist < 0.18) {
       hitHusky = true;
       hitWall = true;
 
+      // Drain battery and bump player instead of Instant Death
+      this.gameState.battery = Math.max(0, this.gameState.battery - 10);
+      this.bumpTimer = 0.5;
+
       if (this.husky.state === 'chase') {
         this.audioManager.playBite();
-        this.triggerGameOver('CAUGHT BY HUSKY! Robot destroyed.');
-        return;
       } else {
         // Handle collision events
         if (Math.random() < HUSKY_BARK_CHANCE) {
           this.audioManager.playBark();
         } else {
           this.audioManager.playBite();
-          this.triggerGameOver('ATTACKED BY HUSKY! Robot flipped over.');
-          return;
         }
       }
     }
 
     // === Charge station logic ===
     const distToCharger = Math.hypot(
-      this.currentPosition.x - ROBOT_SPAWN.x,
-      this.currentPosition.z - ROBOT_SPAWN.z
+      this.currentPosition.x - CHARGE_STATION.x,
+      this.currentPosition.z - CHARGE_STATION.z
     );
     this.isCharging = distToCharger < CHARGE_RADIUS && this.gameState.battery < MAX_BATTERY;
 
@@ -377,8 +400,15 @@ export class Engine {
 
     if (this.actionCooldown <= 0) {
       const nearestDirt = this.dirtSpawner.findNearestSpot(this.currentPosition);
+      const isSweeping = this.input.state.suction;
 
-      if (this.input.state.suction && nearestDirt) {
+      // Check dust particle collision
+      if (this.dustSpawner.checkCollision(this.currentPosition, isSweeping)) {
+         this.audioManager.playSweep();
+         status = 'Sucked up dust!';
+      }
+
+      if (isSweeping && nearestDirt) {
         const result = this.dirtSpawner.applySweep(nearestDirt);
         this.actionCooldown = this.ACTION_INTERVAL;
         if (result === 'wrong_tool') {

@@ -34,8 +34,9 @@ export class ObstacleSpawner {
    * @param dayNumber - game day number
    * @param floorY - world Y of the floor surface from scene bounds
    * @param sceneBounds - bounding box of the scene to constrain spawn area
+   * @param collidableMeshes - Array of meshes to raycast against
    */
-  public generateDailyRoom(dayNumber: number, floorY = 0, sceneBounds?: THREE.Box3): SpawnedObstacle[] {
+  public generateDailyRoom(dayNumber: number, floorY = 0, sceneBounds?: THREE.Box3, collidableMeshes?: THREE.Object3D[]): SpawnedObstacle[] {
     const obstacleCount = Math.min(5 + Math.floor(dayNumber * 0.7), 14);
 
     // Use scene bounding box for spawn area if provided, else fall back to grid constants
@@ -109,12 +110,22 @@ export class ObstacleSpawner {
 
       mesh.rotation.y = Math.random() * Math.PI * 2;
 
-      // Place on actual floor level - Đặt vật trên mặt sàn thực tế
-      mesh.position.set(x, floorY, z);
+      // Calculate placement height using raycasting
+      let finalY = floorY;
+      if (collidableMeshes && collidableMeshes.length > 0) {
+        const raycaster = new THREE.Raycaster(new THREE.Vector3(x, 50, z), new THREE.Vector3(0, -1, 0));
+        const intersects = raycaster.intersectObjects(collidableMeshes, true);
+        if (intersects.length > 0) {
+          finalY = intersects[0].point.y;
+        }
+      }
+
+      // Place on actual floor/surface level - Đặt vật trên mặt sàn thực tế
+      mesh.position.set(x, finalY, z);
       mesh.updateMatrixWorld(true);
       const boxFinal = new THREE.Box3().setFromObject(mesh);
-      // Shift up so bottom of model sits exactly on floorY
-      mesh.position.y += floorY - boxFinal.min.y;
+      // Shift up so bottom of model sits exactly on the surface
+      mesh.position.y += finalY - boxFinal.min.y;
 
       mesh.updateMatrixWorld(true);
       const bounds = new THREE.Box3().setFromObject(mesh);

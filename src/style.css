@@ -160,6 +160,35 @@ body {
 #game-ui {
   justify-content: flex-start;
   align-items: flex-start;
+  z-index: 10; /* Below overlay screens */
+  /* HUD is transparent — it sits over the 3D canvas */
+  background: transparent;
+  pointer-events: none; /* Let clicks pass through to canvas */
+}
+
+/* All interactive buttons inside the HUD still need pointer events */
+#game-ui button, #game-ui .cyber-btn {
+  pointer-events: auto;
+}
+
+/* Pause screen: dark blurred backdrop so HUD panels don't bleed through */
+#pause-screen {
+  background: rgba(5, 10, 20, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 40;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Game Over screen: heavy dark backdrop */
+#game-over-screen {
+  background: rgba(5, 10, 20, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 45;
+  justify-content: center;
+  align-items: center;
 }
 
 .hud-panel {

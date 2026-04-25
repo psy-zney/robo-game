@@ -21,10 +21,15 @@ export class UIManager {
 
   private setupMenuNavigation() {
     document.addEventListener('keydown', (e) => {
-      // Only navigate if we are not actively playing (pointer lock off)
+      // Only navigate if pointer lock is OFF (not in-game)
       if (!document.pointerLockElement) {
         const activeScreen = document.querySelector('.screen.active');
         if (!activeScreen) return;
+        
+        // IMPORTANT: Do NOT intercept keys on the pause screen
+        // The pause screen just shows "click to resume" — no buttons to navigate
+        const screenId = (activeScreen as HTMLElement).id;
+        if (screenId === 'pause-screen' || screenId === 'game-ui') return;
         
         const buttons = Array.from(activeScreen.querySelectorAll('button')) as HTMLElement[];
         if (buttons.length === 0) return;
@@ -33,7 +38,7 @@ export class UIManager {
         
         if (e.code === 'Enter' || e.code === 'Space') {
           if (currentIndex === -1) {
-            buttons[0].click(); // Default click first button
+            buttons[0].click();
           } else {
             buttons[currentIndex].click();
           }

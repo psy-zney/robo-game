@@ -34,7 +34,7 @@ export class Robot {
       });
 
       // Force scale to exactly 0.01 as tested in editor
-      this.robotModel.scale.setScalar(0.008);
+      this.robotModel.scale.setScalar(0.003);
 
       // Slight offset to prevent Z-fighting with floor
       // Nâng nhẹ lên 1 chút xíu để không bị kẹt mặt sàn
@@ -45,13 +45,13 @@ export class Robot {
 
       // Xóa logic căn tâm bằng Box3 vì nó bị lỗi do mô hình không đối xứng.
       // Thay vào đó, chỉnh tay bù trừ nhẹ sang trái (âm X) để căn giữa bằng mắt thường
-      this.robotModel.position.x = -0.015; 
+      this.robotModel.position.x = -0.015;
 
       this.group.add(this.robotModel);
     }
 
     // POV camera setup (Attached to top of robot)
-    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
     this.camera.position.set(0, 0.15, 0.05); // Low camera, exactly at POV height, safely inside collision radius
     this.camera.rotation.x = -0.1; // Looking very slightly down
 
@@ -109,10 +109,10 @@ export class Robot {
 
     if (moveX !== 0 || moveZ !== 0) {
       const dir = new THREE.Vector3(moveX, 0, moveZ).normalize();
-      
+
       // Apply camera's rotation to the movement direction
       dir.applyEuler(new THREE.Euler(0, this.cameraGroup.rotation.y, 0));
-      
+
       this.tempMovement.copy(dir).multiplyScalar(speed * deltaTime * 60);
     }
 
