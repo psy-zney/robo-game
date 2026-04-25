@@ -8,15 +8,90 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="ui-layer">
-      <div id="coordinates"><strong>XYZ:</strong> 0.00, 0.00, 0.00</div>
-      <div id="battery"><strong>Battery:</strong> 100%</div>
-      <div id="progress"><strong>Cleaned:</strong> 0 / 10000</div>
-      <div id="storage"><strong>Storage:</strong> 0 / 12</div>
-      <div id="status"><strong>Status:</strong> Ready</div>
-      <div id="action"><strong>Action:</strong> Press E to suction / scan</div>
-      <button id="reset-btn" style="pointer-events: auto; padding: 10px; margin-top: 10px; background: #fff; border: 1px solid #000; cursor: pointer; color: #000; border-radius: 5px; font-weight: bold;">Reset Positions</button>
+    <!-- Start Screen -->
+    <div id="start-screen" class="screen active">
+      <div class="start-content">
+        <img src="/image/logo.png" alt="RoboClean Logo" class="game-logo" />
+        <h1 class="game-title">ROBO<span class="text-accent">CLEAN</span></h1>
+        <p class="game-subtitle">Next-Gen Autonomous Protocol</p>
+        <button id="start-btn" class="cyber-btn">START SIMULATION</button>
+      </div>
     </div>
+
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="screen">
+      <div class="loading-content">
+        <div class="spinner"></div>
+        <h2 id="loading-text">INITIALIZING SYSTEMS...</h2>
+        <div class="progress-bar-container">
+          <div id="loading-progress" class="progress-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- In-Game HUD -->
+    <div id="game-ui" class="screen">
+      <div class="hud-panel top-left rpg-panel">
+        <div class="rpg-bar-container energy-bar-container">
+          <div class="rpg-bar-label">ENERGY</div>
+          <div class="rpg-bar-bg">
+            <div id="battery-bar" class="rpg-bar-fill energy-fill" style="width: 100%"></div>
+            <div id="battery" class="rpg-bar-text">100%</div>
+          </div>
+        </div>
+        <div class="hud-item storage-container">
+          <span class="hud-icon">📦</span>
+          <div class="hud-info">
+            <span class="label">STORAGE</span>
+            <span id="storage" class="value">0 / 12</span>
+            <div class="stat-bar"><div id="storage-bar" class="stat-fill bg-purple" style="width: 0%"></div></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="hud-panel top-right">
+        <div class="hud-item text-right">
+          <span class="hud-icon">📅</span>
+          <span id="day-counter" class="value day-badge">DAY 1</span>
+        </div>
+
+        <div class="hud-item text-right">
+          <span class="label">DIRT REMAINING</span>
+          <span id="progress" class="value text-accent">0 / 0</span>
+        </div>
+        <div class="hud-item text-right">
+          <span class="label">STATUS</span>
+          <span id="status" class="value status-text">READY</span>
+        </div>
+      </div>
+
+      <div class="hud-panel bottom-center">
+        <div id="action" class="action-prompt"><span>[ E ]</span> SWEEP &nbsp;&nbsp; <span>[ R ]</span> MOP</div>
+      </div>
+
+      <div class="hud-panel bottom-right">
+         <button id="reset-btn" class="cyber-btn small">SYSTEM RESET</button>
+      </div>
+    </div>
+
+    <!-- Pause Screen -->
+    <div id="pause-screen" class="screen">
+      <div class="pause-content glass-panel" style="text-align: center;">
+        <h1 class="game-title">PAUSED</h1>
+        <p class="game-subtitle">Simulation Suspended</p>
+        <p style="margin-top: 20px; color: var(--color-text);">Click anywhere to resume</p>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="screen">
+      <div class="game-over-content glass-panel">
+        <h1 class="critical-text">SYSTEM FAILURE</h1>
+        <p id="game-over-reason">CRITICAL ERROR ENCOUNTERED</p>
+        <button id="restart-btn" class="cyber-btn">REBOOT SYSTEM</button>
+      </div>
+    </div>
+
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

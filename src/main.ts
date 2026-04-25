@@ -1,65 +1,54 @@
+
 import { Engine } from './core/Engine';
 import { assetManager } from './core/AssetManager';
 import { obstacleModels } from './utils/modelList';
 
-async function bootstrap() {
-  // Create a simple loading UI
-  const loadingElement = document.createElement('div');
-  loadingElement.style.position = 'absolute';
-  loadingElement.style.top = '0';
-  loadingElement.style.left = '0';
-  loadingElement.style.width = '100%';
-  loadingElement.style.height = '100%';
-  loadingElement.style.backgroundColor = '#111';
-  loadingElement.style.color = '#fff';
-  loadingElement.style.display = 'flex';
-  loadingElement.style.flexDirection = 'column';
-  loadingElement.style.justifyContent = 'center';
-  loadingElement.style.alignItems = 'center';
-  loadingElement.style.fontFamily = 'sans-serif';
-  loadingElement.style.zIndex = '9999';
-  
-  const spinner = document.createElement('div');
-  spinner.style.border = '4px solid rgba(255, 255, 255, 0.3)';
-  spinner.style.borderTop = '4px solid #fff';
-  spinner.style.borderRadius = '50%';
-  spinner.style.width = '40px';
-  spinner.style.height = '40px';
-  spinner.animate([
-    { transform: 'rotate(0deg)' },
-    { transform: 'rotate(360deg)' }
-  ], { duration: 1000, iterations: Infinity });
-  
-  const text = document.createElement('h2');
-  text.innerText = 'Loading 3D Models...';
-  text.style.marginTop = '20px';
+const startScreen = document.getElementById('start-screen')!;
+const loadingScreen = document.getElementById('loading-screen')!;
+const gameUI = document.getElementById('game-ui')!;
+const startBtn = document.getElementById('start-btn')!;
+const loadingText = document.getElementById('loading-text')!;
 
-  loadingElement.appendChild(spinner);
-  loadingElement.appendChild(text);
-  document.body.appendChild(loadingElement);
+// Initial state: start screen is active, others are hidden by CSS opacity 0 / pointer-events none
+startBtn.addEventListener('click', () => {
+  startScreen.classList.remove('active');
+  loadingScreen.classList.add('active');
+  loadGameAssets();
+});
 
+async function loadGameAssets() {
   try {
     const promises = [
-      assetManager.loadModel('house', '/models/House interior.glb'),
-      assetManager.loadModel('roomba', '/models/Roomba.glb'),
-      assetManager.loadModel('door', '/models/Door.glb'),
-      assetManager.loadModel('husky', '/models/Husky.glb')
+      assetManager.loadModel('home', '/models/home.glb'),
+      assetManager.loadModel('robot', '/models/Robot.glb'),
+      assetManager.loadModel('husky', '/models/Husky.glb'),
+      assetManager.loadModel('Rat', '/models/Rat.glb')
     ];
+    
     for (const name of obstacleModels) {
       promises.push(assetManager.loadModel(name, `/models/${name}.glb`));
     }
-    await Promise.all(promises);
+    
+    // Artificial delay to show off the cool loading screen (optional)
+    await Promise.all([...promises, new Promise(resolve => setTimeout(resolve, 800))]);
+
+    const homeModel = assetManager.getModel('home');
+    if (!homeModel) console.error('Failed to load home model');
+    const robotModel = assetManager.getModel('robot');
+    if (!robotModel) console.error('Failed to load robot model');
+    const huskyModel = assetManager.getModel('husky');
+    if (!huskyModel) console.error('Failed to load husky model');
   } catch (error) {
     console.error('Failed to load assets:', error);
-    text.innerText = 'Failed to load models. Check console.';
+    loadingText.innerText = 'ERROR: INITIALIZATION FAILED';
+    loadingText.style.color = 'var(--color-danger)';
     return; // Stop execution if assets fail
   }
 
-  // Remove loading UI
-  document.body.removeChild(loadingElement);
+  // Transition to game UI
+  loadingScreen.classList.remove('active');
+  gameUI.classList.add('active');
 
-  // Start the game
+  // Start the game engine
   new Engine();
 }
-
-bootstrap();

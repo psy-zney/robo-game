@@ -1,5 +1,5 @@
 export const obstacleModels = [
-  "Bag", "Bear", "Bomb", "Couch", "Crime Scene 🚔", "Debris Papers",
-  "Dirty Plate", "Knife", "Marsey", "Phone", "Rat", "Simple Suitcase",
-  "Sneakers", "trah bag grey"
+  "Bag", "Bomb", "Couch", "Debris Papers",
+  "Dirty Plate", "Knife", "Marsey", "Simple Suitcase",
+  "trah bag grey"
 ];

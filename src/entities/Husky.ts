@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { assetManager } from '../core/AssetManager';
 
-export type HuskyState = 'idle' | 'walk' | 'lie' | 'attack';
+export type HuskyState = 'idle' | 'walk' | 'lie' | 'attack' | 'chase';
 
 export class Husky {
   public group = new THREE.Group();
@@ -11,19 +11,23 @@ export class Husky {
   private stateTimer = 0;
   
   private targetPosition = new THREE.Vector3();
-  private speed = 1.5; // units per second
+  private speed = 0.15; // Nerfed walk speed
   private bounds = {
-    minX: -8, maxX: 8,
-    minZ: -8, maxZ: 8
+    minX: -3.0, maxX: 3.0,
+    minZ: -3.0, maxZ: 3.0
   };
 
   private tempBox = new THREE.Box3();
   
+  private mixer?: THREE.AnimationMixer;
+  private animations: Record<string, THREE.AnimationAction> = {};
+  private currentAction?: THREE.AnimationAction;
+
   constructor() {
     this.model = assetManager.getModel('husky');
     if (this.model) {
-      // Scale down to 1/3 as requested - Giảm kích thước xuống còn 1/3 (0.2) theo yêu cầu của user
-      this.model.scale.setScalar(0.2);
+      this.group.scale.setScalar(0.05);
+
       this.model.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
@@ -31,80 +35,93 @@ export class Husky {
           mesh.receiveShadow = true;
         }
       });
-      // Center model and ignore dynamic Box3 y-offset calculation - Bỏ qua việc lấy thông số Box3 động dễ bị lỗi với SkinnedMesh
       this.model.position.y = 0;
-      
       this.group.add(this.model);
-    } else {
-      // Fallback box if model fails to load - Khối hộp dự phòng nếu model bị hỏng
-      const geo = new THREE.BoxGeometry(0.3, 0.6, 0.8);
-      const mat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.y = 0.3; // Local Y offset - Nâng cao tương đối với group gốc
-      this.group.add(mesh);
+
+      const anims = assetManager.getAnimations('husky');
+      if (anims && anims.length > 0) {
+        this.mixer = new THREE.AnimationMixer(this.model);
+        anims.forEach(anim => {
+          const name = anim.name.toLowerCase();
+          if (name.includes('idle')) this.animations.idle = this.mixer!.clipAction(anim);
+          else if (name.includes('run')) this.animations.run = this.mixer!.clipAction(anim);
+          else if (name.includes('walk')) this.animations.walk = this.mixer!.clipAction(anim);
+          else if (name.includes('attack') || name.includes('bite') || name.includes('jump')) this.animations.attack = this.mixer!.clipAction(anim);
+          else if (name.includes('lie') || name.includes('sleep') || name.includes('sit')) this.animations.lie = this.mixer!.clipAction(anim);
+        });
+        
+        if (!this.animations.idle && anims.length > 0) this.animations.idle = this.mixer.clipAction(anims[0]);
+        if (!this.animations.walk && anims.length > 1) this.animations.walk = this.mixer.clipAction(anims[1]);
+        if (!this.animations.run) this.animations.run = this.animations.walk;
+        if (!this.animations.attack && anims.length > 2) this.animations.attack = this.mixer.clipAction(anims[2]);
+        if (!this.animations.lie && anims.length > 3) this.animations.lie = this.mixer.clipAction(anims[3]);
+      }
     }
-    
-    // Exact requested start position - Đặt mặc định Husky ở vị trí chính xác người dùng yêu cầu
-    let startX = 0.77; 
-    let startZ = -47.9;
+  }
 
-    this.group.position.set(startX, 1.5, startZ);
-    
-    // Anchor walk bounds securely around the starting position so it never wanders back to (0,0) - Ràng buộc biên độ đi dạo xung quanh tọa độ gốc
+  public spawn(x: number, y: number, z: number) {
+    this.group.position.set(x, y, z);
     this.bounds = {
-      minX: startX - 3, maxX: startX + 3,
-      minZ: startZ - 3, maxZ: startZ + 3
+      minX: -4.0, maxX: 4.0,
+      minZ: -4.0, maxZ: 4.0
     };
-
     this.pickNextState();
+  }
+
+  private playAnimation(name: string) {
+    const action = this.animations[name] || this.animations.idle;
+    if (action && this.currentAction !== action) {
+      if (this.currentAction) {
+        this.currentAction.fadeOut(0.2);
+      }
+      action.reset().fadeIn(0.2).play();
+      this.currentAction = action;
+    }
   }
 
   private random(min: number, max: number) {
     return Math.random() * (max - min) + min;
   }
 
+  public startChase() {
+    this.state = 'chase';
+    this.stateTimer = 15; // Give it 15 seconds to catch the player
+    this.speed = 1.08; // Fast run (0.018 * 60 to match user spec)
+    this.playAnimation('run');
+  }
+
   private pickNextState() {
-    if (this.state === 'attack') return;
-    
+    this.speed = 0.15; // Reset to slow walk
     const rand = Math.random();
-    if (rand < 0.3) {
+    if (rand < 0.2) { 
+      this.state = 'attack';
+      this.stateTimer = this.random(2, 4);
+      this.playAnimation('attack');
+    } else if (rand < 0.7) { 
       this.state = 'walk';
-      this.stateTimer = this.random(3, 8);
+      this.stateTimer = this.random(4, 10);
       this.targetPosition.set(
         this.random(this.bounds.minX, this.bounds.maxX),
-        1.5,
+        this.group.position.y,
         this.random(this.bounds.minZ, this.bounds.maxZ)
       );
-      // Stand up to walk - Đứng dậy để đi dạo
-      if (this.model) {
-        this.model.rotation.z = 0;
-        this.model.position.y = 0;
-      }
-    } else if (rand < 0.6) {
+      this.playAnimation('walk');
+    } else if (rand < 0.9) { 
       this.state = 'idle';
-      this.stateTimer = this.random(2, 5);
-      // Stand up - Đứng dậy
-      if (this.model) {
-        this.model.rotation.z = 0;
-        this.model.position.y = 0; // reset local Y
-      }
-    } else {
+      this.stateTimer = this.random(2, 4);
+      this.playAnimation('idle');
+    } else { 
       this.state = 'lie';
-      this.stateTimer = this.random(4, 10);
-      // Fake lie down by rotating model 90 degrees around Z - Giả vờ nằm bằng cách lật ngang mô hình 90 độ
-      if (this.model) {
-          this.model.rotation.z = Math.PI / 2;
-          this.model.position.y = 0.15; // lower to local ground - Hạ xuống cho sát đất
-      }
+      this.stateTimer = this.random(3, 6);
+      this.playAnimation('lie');
     }
   }
 
   public getBoundingBox(destination?: THREE.Box3): THREE.Box3 {
-    // Cannot use setFromObject for SkinnedMesh as it returns gigantic bounds - Không dùng setFromObject cho model vì SkinnedMesh sẽ trả về Box3 khổng lồ gây dính Game Over liên tục
     const center = this.group.position;
     this.tempBox.setFromCenterAndSize(
-      new THREE.Vector3(center.x, center.y + 0.3, center.z), 
-      new THREE.Vector3(0.6, 0.6, 1.0) // Manual bounding size
+      new THREE.Vector3(center.x, center.y + 0.15, center.z), 
+      new THREE.Vector3(0.3, 0.3, 0.3) 
     );
     if (destination) {
       return destination.copy(this.tempBox);
@@ -112,43 +129,50 @@ export class Husky {
     return this.tempBox;
   }
 
-  public attack(targetPos: THREE.Vector3) {
-    this.state = 'attack';
-    this.stateTimer = 5; // how long it stays in attack state - Thời gian giữ trạng thái cắn
-    
-    // Stand up and face the target - Bật dậy và quay mặt về phía mục tiêu
-    if (this.model) {
-        this.model.rotation.z = 0;
-        this.model.position.y = 0;
+  public update(deltaTime: number, checkCollision?: (origin: THREE.Vector3, dir: THREE.Vector3, dist: number) => boolean, targetPlayer?: THREE.Vector3) {
+    if (this.mixer) {
+      this.mixer.update(deltaTime);
     }
-    
-    this.group.lookAt(targetPos.x, this.group.position.y, targetPos.z);
-  }
-
-  public update(deltaTime: number) {
-    if (this.state === 'attack') return;
 
     this.stateTimer -= deltaTime;
-    if (this.stateTimer <= 0) {
+    if (this.stateTimer <= 0 && this.state !== 'chase') {
+      this.pickNextState();
+    } else if (this.stateTimer <= 0 && this.state === 'chase') {
+      // Gave up chasing after timer
       this.pickNextState();
     }
 
-    // Walking pathfinding - Xử lý đường đi nếu đang ở trạng thái đi tản bộ
-    if (this.state === 'walk') {
-      const dir = new THREE.Vector3().subVectors(this.targetPosition, this.group.position);
-      dir.y = 0;
-      const dist = dir.length();
-      
-      if (dist < 0.1) {
+    if (this.state === 'walk' || this.state === 'chase') {
+      if (this.state === 'chase' && targetPlayer) {
+        this.targetPosition.copy(targetPlayer);
+        this.targetPosition.y = this.group.position.y;
+      }
+
+      const dist = this.group.position.distanceTo(this.targetPosition);
+      if (dist < 0.1 && this.state !== 'chase') {
         this.pickNextState();
-      } else {
-        dir.normalize();
-        const moveDist = Math.min(dist, this.speed * deltaTime);
-        this.group.position.addScaledVector(dir, moveDist);
+      } else if (dist > 0.05) {
+        const dir = new THREE.Vector3().subVectors(this.targetPosition, this.group.position).normalize();
+        const moveDist = this.speed * deltaTime;
         
-        // Face movement direction - Tự động quay mặt theo hướng di chuyển
-        const targetRotation = Math.atan2(dir.x, dir.z);
-        this.group.rotation.y = targetRotation;
+        let canMove = true;
+        if (checkCollision && this.state !== 'chase') { // Don't check wall collision tightly when chasing to avoid getting stuck easily
+          const origin = this.group.position.clone();
+          origin.y += 0.2; 
+          if (checkCollision(origin, dir, moveDist + 0.3)) {
+            canMove = false;
+          }
+        }
+
+        if (canMove) {
+          this.group.position.addScaledVector(dir, moveDist);
+          // Only look at target if it's far enough to avoid jittering
+          if (dist > 0.1) {
+            this.group.lookAt(this.targetPosition.x, this.group.position.y, this.targetPosition.z);
+          }
+        } else if (this.state !== 'chase') {
+          this.pickNextState();
+        }
       }
     }
   }
