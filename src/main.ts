@@ -2,21 +2,77 @@
 import { Engine } from './core/Engine';
 import { assetManager } from './core/AssetManager';
 import { obstacleModels } from './utils/modelList';
+import { SaveManager } from './systems/SaveManager';
 
 const startScreen = document.getElementById('start-screen')!;
 const loadingScreen = document.getElementById('loading-screen')!;
 const gameUI = document.getElementById('game-ui')!;
-const startBtn = document.getElementById('start-btn')!;
+const continueBtn = document.getElementById('continue-btn') as HTMLButtonElement | null;
+const continueMeta = document.getElementById('continue-meta');
+const newRunBtn = document.getElementById('new-run-btn') as HTMLButtonElement | null;
+const replaySelect = document.getElementById('replay-day') as HTMLSelectElement | null;
+const replayBtn = document.getElementById('replay-btn') as HTMLButtonElement | null;
 const loadingText = document.getElementById('loading-text')!;
+let engine: Engine | null = null;
 
-// Initial state: start screen is active, others are hidden by CSS opacity 0 / pointer-events none
-startBtn.addEventListener('click', () => {
+hydrateHub();
+
+function hydrateHub() {
+  const save = SaveManager.load();
+  if (continueBtn && continueMeta) {
+    if (save) {
+      continueBtn.disabled = false;
+      continueMeta.textContent = `DAY ${save.day} (HIGHEST: DAY ${save.highestDay})`;
+    } else {
+      continueBtn.disabled = true;
+      continueMeta.textContent = 'NO SAVE FOUND';
+    }
+  }
+
+  if (replaySelect && replayBtn) {
+    replaySelect.innerHTML = '';
+    if (save) {
+      const maxDay = Math.max(1, save.highestDay);
+      for (let d = 1; d <= maxDay; d++) {
+        const opt = document.createElement('option');
+        opt.value = String(d);
+        opt.textContent = `DAY ${d}`;
+        replaySelect.appendChild(opt);
+      }
+      replaySelect.disabled = false;
+      replayBtn.disabled = false;
+    } else {
+      replaySelect.disabled = true;
+      replayBtn.disabled = true;
+    }
+  }
+
+  continueBtn?.addEventListener('click', () => {
+    const s = SaveManager.load();
+    if (!s) return;
+    startGame({ startDay: s.day, startBattery: s.battery });
+  });
+
+  newRunBtn?.addEventListener('click', () => {
+    SaveManager.clear();
+    startGame({ startDay: 1, startBattery: 100 });
+  });
+
+  replayBtn?.addEventListener('click', () => {
+    const s = SaveManager.load();
+    if (!s || !replaySelect) return;
+    const day = Math.max(1, Math.min(s.highestDay, Number(replaySelect.value) || 1));
+    startGame({ startDay: day, startBattery: 100 });
+  });
+}
+
+function startGame(options: { startDay: number; startBattery: number }) {
   startScreen.classList.remove('active');
   loadingScreen.classList.add('active');
-  loadGameAssets();
-});
+  loadGameAssets(options);
+}
 
-async function loadGameAssets() {
+async function loadGameAssets(options: { startDay: number; startBattery: number }) {
   try {
     const promises = [
       assetManager.loadModel('home', '/models/home.glb'),
@@ -50,5 +106,16 @@ async function loadGameAssets() {
   gameUI.classList.add('active');
 
   // Start the game engine
-  new Engine();
+  engine = new Engine({ startDay: options.startDay, startBattery: options.startBattery });
+
+  // Pause screen buttons
+  const resumeBtn = document.getElementById('resume-btn');
+  resumeBtn?.addEventListener('click', () => document.body.requestPointerLock());
+  const restartDayBtn = document.getElementById('restart-day-btn');
+  restartDayBtn?.addEventListener('click', () => engine?.restartDay());
+  const restartRunBtn = document.getElementById('restart-run-btn');
+  restartRunBtn?.addEventListener('click', () => {
+    SaveManager.clear();
+    window.location.reload();
+  });
 }

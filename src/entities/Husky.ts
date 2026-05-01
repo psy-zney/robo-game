@@ -15,6 +15,8 @@ export class Husky {
   
   private targetPosition = new THREE.Vector3();
   private speed = 0.15; // Nerfed walk speed
+  private floorY = 0;
+  private lastPosition = new THREE.Vector3();
   private bounds = {
     minX: -3.0, maxX: 3.0,
     minZ: -3.0, maxZ: 3.0
@@ -26,6 +28,10 @@ export class Husky {
   private animations: Record<string, THREE.AnimationAction> = {};
   private currentAction?: THREE.AnimationAction;
 
+  // Tuning: these represent "expected" world-units-per-second for timeScale=1
+  private readonly WALK_SPEED_REF = 0.45;
+  private readonly RUN_SPEED_REF = 1.25;
+
   constructor() {
     this.model = assetManager.getModel('husky');
     if (this.model) {
@@ -36,6 +42,7 @@ export class Husky {
           mesh.receiveShadow = true;
         }
       });
+      // Reset offset first; we'll align feet-to-ground after scaling.
       this.model.position.y = 0;
       this.group.add(this.model);
 
@@ -52,6 +59,9 @@ export class Husky {
       } else {
         this.group.scale.setScalar(0.05); // fallback
       }
+
+      // Align model so its lowest point touches group's local y=0.
+      this.alignFeetToGround();
 
       const anims = assetManager.getAnimations('husky');
       if (anims && anims.length > 0) {
@@ -101,8 +111,22 @@ export class Husky {
     this.group.add(this.attackRing);
   }
 
+  private alignFeetToGround() {
+    if (!this.model) return;
+    this.model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(this.model);
+    const minY = box.min.y;
+    if (Number.isFinite(minY)) {
+      // Move model up/down so minY becomes 0 in group local space.
+      this.model.position.y -= minY;
+      this.model.updateMatrixWorld(true);
+    }
+  }
+
   public spawn(x: number, y: number, z: number) {
+    this.floorY = y;
     this.group.position.set(x, y, z);
+    this.lastPosition.copy(this.group.position);
     this.bounds = {
       minX: -4.0, maxX: 4.0,
       minZ: -4.0, maxZ: 4.0
@@ -184,8 +208,13 @@ export class Husky {
     checkLOS?: (from: THREE.Vector3, to: THREE.Vector3) => boolean, // Returns TRUE if wall blocks LOS
     targetPlayer?: THREE.Vector3,
     isPlayerMoving?: boolean,
-    isPlayerCleaning?: boolean
+    isPlayerCleaning?: boolean,
+    getGroundY?: (x: number, z: number, fromY: number) => number | undefined
   ) {
+    // Ground snap: use floorY fallback, but prefer raycast ground height when available.
+    const groundY = getGroundY ? getGroundY(this.group.position.x, this.group.position.z, this.floorY + 1.0) : undefined;
+    this.group.position.y = groundY ?? this.floorY;
+
     if (this.mixer) {
       this.mixer.update(deltaTime);
     }
@@ -246,7 +275,34 @@ export class Husky {
             this.group.lookAt(this.targetPosition.x, this.group.position.y, this.targetPosition.z);
           }
         } else if (this.state !== 'chase') {
+          // If blocked while wandering, pick a new behavior and stop the "sliding walk" look.
+          this.playAnimation('idle');
           this.pickNextState();
+        }
+      }
+    }
+
+    // === Animation sync to actual movement ===
+    // Derive movement speed from real displacement, not from intended AI speed.
+    const dx = this.group.position.x - this.lastPosition.x;
+    const dz = this.group.position.z - this.lastPosition.z;
+    const moved = Math.hypot(dx, dz);
+    const moveSpeed = deltaTime > 0 ? moved / deltaTime : 0;
+    this.lastPosition.copy(this.group.position);
+
+    // If we're in a locomotion state but effectively not moving, avoid "moonwalking".
+    const movingEnough = moveSpeed > 0.03;
+    if (this.state === 'walk' || this.state === 'chase') {
+      if (!movingEnough && this.state !== 'chase') {
+        this.playAnimation('idle');
+      } else {
+        const isRun = this.state === 'chase' || moveSpeed > 0.75;
+        this.playAnimation(isRun ? 'run' : 'walk');
+        const ref = isRun ? this.RUN_SPEED_REF : this.WALK_SPEED_REF;
+        const action = this.currentAction;
+        if (action && ref > 0) {
+          // Clamp to keep animation stable even if dt spikes.
+          action.timeScale = THREE.MathUtils.clamp(moveSpeed / ref, 0.6, 1.8);
         }
       }
     }

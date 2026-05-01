@@ -9,6 +9,7 @@ import { Husky } from '../entities/Husky';
 import { ObstacleSpawner } from '../systems/ObstacleSpawner';
 import { DirtSpawner } from '../systems/DirtSpawner';
 import { DustSpawner } from '../systems/DustSpawner';
+import { getDayStory } from '../systems/StorySystem';
 import {
   MOVE_SPEED, SWEEP_SPEED, MOP_SPEED, HOME_SCALE,
   CHARGE_RATE, CHARGE_RADIUS,
@@ -16,10 +17,12 @@ import {
   HUSKY_BARK_CHANCE, HUSKY_RANDOM_BITE_BASE, MAX_BATTERY
 } from '../utils/constants';
 import { Rat } from '../entities/Rat';
+import { SaveManager } from '../systems/SaveManager';
 
 // Fixed robot spawn / charge station position
-const ROBOT_SPAWN = { x: 2.146, y: -0.401, z: -0.474 };
-const HUSKY_SPAWN = { x: 0.337, y: -0.412, z: -1.868 };
+// Y values will be set dynamically after house alignment — use floorY at runtime
+const ROBOT_SPAWN = { x: 2.146, z: -0.474 };
+const HUSKY_SPAWN = { x: 0.337, z: -1.868 };
 const CHARGE_STATION = { x: 4.0, z: -0.8 }; // Matches createChargeStation() position
 
 export class Engine {
@@ -46,7 +49,11 @@ export class Engine {
   private previousTime = performance.now();
   private isGameOver = false;
   private bumpTimer = 0;
+  private bumpDir = new THREE.Vector3();
+  private cameraShakeTimer = 0;
   private day = 1;
+  private dayIntroTimer = 0;
+  private dayMission = '';
 
   // Charge station visual
   private chargeStationMesh!: THREE.Mesh;
@@ -71,7 +78,7 @@ export class Engine {
   private collidableMeshes: THREE.Object3D[] = [];
   public houseBounds = new THREE.Box3();
 
-  constructor() {
+  constructor(options?: { startDay?: number; startBattery?: number }) {
     this.scene.background = new THREE.Color(0x222222);
     this.camera = this.robot.camera;
     this.audioManager.initOnUserGesture();
@@ -85,8 +92,9 @@ export class Engine {
 
     this.dustSpawner = new DustSpawner(this.scene);
 
+    this.day = Math.max(1, Math.floor(options?.startDay ?? 1));
     this.gameState.init(100);
-    this.gameState.battery = MAX_BATTERY;
+    this.gameState.battery = Math.max(0, Math.min(MAX_BATTERY, options?.startBattery ?? MAX_BATTERY));
     this.updateHud('Ready');
     window.addEventListener('resize', this.onResize);
     this.animate();
@@ -124,24 +132,35 @@ export class Engine {
       });
       this.collidableMeshes.push(homeModel);
       this.scene.add(homeModel);
+
       homeModel.updateMatrixWorld(true);
       this.houseBounds.setFromObject(homeModel);
       this.floorY = -0.412;
     }
 
+    // Add coordinate grid and axes helper for visualization
+    // Lưới và trục tọa độ nằm tại y=0 (cùng mặt phẳng sàn)
+    const gridHelper = new THREE.GridHelper(30, 30, 0x0000ff, 0x808080);
+    gridHelper.position.y = this.floorY + 0.01;
+    this.scene.add(gridHelper);
+
+    const axesHelper = new THREE.AxesHelper(5);
+    axesHelper.position.y = this.floorY + 0.01;
+    this.scene.add(axesHelper);
+
     // Charge station visual (glowing ring)
     this.createChargeStation();
 
-    // Spawn Robot
-    this.robot.spawn(ROBOT_SPAWN.x, ROBOT_SPAWN.y, ROBOT_SPAWN.z);
+    // Spawn Robot — Y tự tính từ floorY
+    this.robot.spawn(ROBOT_SPAWN.x, this.floorY, ROBOT_SPAWN.z);
     this.scene.add(this.robot.group);
 
-    // Spawn Husky
-    this.husky.spawn(HUSKY_SPAWN.x, HUSKY_SPAWN.y, HUSKY_SPAWN.z);
+    // Spawn Husky — Y tự tính từ floorY
+    this.husky.spawn(HUSKY_SPAWN.x, this.floorY, HUSKY_SPAWN.z);
     this.scene.add(this.husky.group);
 
-    // Spawn Rat
-    this.rat.spawn(1, this.floorY, 1);
+    // Spawn Rat — đặt ở góc phòng, kích thước nhỏ
+    this.rat.spawn(2.0, this.floorY, -1.5);
     this.scene.add(this.rat.group);
 
     // Spawn obstacles
@@ -162,8 +181,8 @@ export class Engine {
     const resetBtn = document.getElementById('reset-btn');
     if (resetBtn) {
       resetBtn.addEventListener('click', () => {
-        this.robot.spawn(ROBOT_SPAWN.x, ROBOT_SPAWN.y, ROBOT_SPAWN.z);
-        this.husky.spawn(HUSKY_SPAWN.x, HUSKY_SPAWN.y, HUSKY_SPAWN.z);
+        this.robot.spawn(ROBOT_SPAWN.x, this.floorY, ROBOT_SPAWN.z);
+        this.husky.spawn(HUSKY_SPAWN.x, this.floorY, HUSKY_SPAWN.z);
         this.isGameOver = false;
         this.gameState.battery = MAX_BATTERY;
         this.spawnDirtForDay(this.day);
@@ -191,11 +210,38 @@ export class Engine {
 
   /** Spawn dirt for Day N */
   private async spawnDirtForDay(day: number) {
-    await this.dirtSpawner.spawnForDay(day, this.floorY, this.collidableMeshes);
-    this.dustSpawner.spawnForDay(day, this.floorY);
+    const story = getDayStory(day);
+    this.dayMission = story.mission;
+    this.dayIntroTimer = 3.5;
+
+    await this.dirtSpawner.spawnForDay(day, this.floorY, this.collidableMeshes, story.dirtWeights);
+    this.dustSpawner.spawnForDay(day, this.floorY, story.dustColor);
     const total = this.dirtSpawner.getTotalCount();
     this.gameState.totalCells = total;
     this.gameState.cleanedCells = 0;
+
+    this.saveProgress();
+  }
+
+  private saveProgress() {
+    const existing = SaveManager.load();
+    const highestDay = Math.max(existing?.highestDay ?? 1, this.day);
+    SaveManager.save({
+      battery: this.gameState.battery,
+      cleanedCount: this.gameState.cleanedCells,
+      day: this.day,
+      money: 0,
+      highestDay,
+    });
+  }
+
+  public restartDay() {
+    this.isGameOver = false;
+    this.gameState.battery = MAX_BATTERY;
+    this.robot.spawn(ROBOT_SPAWN.x, this.floorY, ROBOT_SPAWN.z);
+    this.husky.spawn(HUSKY_SPAWN.x, this.floorY, HUSKY_SPAWN.z);
+    this.spawnDirtForDay(this.day);
+    this.updateHud(`Restarting Day ${this.day}`);
   }
 
   private onResize = () => {
@@ -205,6 +251,7 @@ export class Engine {
   };
 
   private updateHud(status: string) {
+    const story = getDayStory(this.day);
     this.uiManager.update(
       this.gameState.battery,
       this.gameState.cleanedCells,
@@ -212,7 +259,8 @@ export class Engine {
       this.gameState.storage,
       this.gameState.storageCapacity,
       status,
-      this.day
+      this.day,
+      this.dayMission || story.mission
     );
   }
 
@@ -257,7 +305,18 @@ export class Engine {
         const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
         return intersects.length > 0 && intersects[0].distance < dist;
       },
-      this.currentPosition, isPlayerInputMoving, isCleaning
+      this.currentPosition, isPlayerInputMoving, isCleaning,
+      // Ground height under Husky (raycast down). Returns undefined if no hit.
+      (x, z, fromY) => {
+        const origin = new THREE.Vector3(x, fromY, z);
+        this.raycaster.set(origin, new THREE.Vector3(0, -1, 0));
+        const hits = this.raycaster.intersectObjects(this.collidableMeshes, true);
+        if (!hits.length) return undefined;
+        const hitY = hits[0].point.y;
+        // Prevent Husky from snapping onto furniture tops; allow tiny variations only.
+        if (hitY > this.floorY + 0.08) return this.floorY;
+        return hitY;
+      }
     );
 
     // === Rat AI ===
@@ -325,17 +384,30 @@ export class Engine {
 
     // === Husky collision ===
     let hitHusky = false;
-    const huskyDist = this.currentPosition.distanceTo(this.husky.group.position);
+    // Check both current and intended next position to prevent "near pass-through".
+    const huskyPos = this.husky.group.position;
+    const huskyDistNow = this.currentPosition.distanceTo(huskyPos);
+    const huskyDistNext = targetPosition.distanceTo(huskyPos);
+    const huskyDist = Math.min(huskyDistNow, huskyDistNext);
     
-    // Hard 18cm hitbox — prevents false collisions across large distances
-    // ROBOT_RADIUS (0.6) was intentionally NOT used here to avoid instant-death zones
-    if (huskyDist < 0.18) {
+    // Slightly larger hitbox + continuous check (next position) so it doesn't feel like clipping.
+    if (huskyDist < 0.28) {
       hitHusky = true;
       hitWall = true;
 
       // Drain battery and bump player instead of Instant Death
       this.gameState.battery = Math.max(0, this.gameState.battery - 10);
       this.bumpTimer = 0.5;
+      this.cameraShakeTimer = 0.25;
+
+      // Push away from husky for a tactile collision feel.
+      this.bumpDir.copy(this.currentPosition).sub(huskyPos);
+      this.bumpDir.y = 0;
+      if (this.bumpDir.lengthSq() < 1e-6) {
+        this.bumpDir.set(0, 0, 1);
+      } else {
+        this.bumpDir.normalize();
+      }
 
       if (this.husky.state === 'chase') {
         this.audioManager.playBite();
@@ -370,6 +442,13 @@ export class Engine {
     // === Battery drain ===
     let drainRate = 0;
     let status = 'Ready';
+    const story = getDayStory(this.day);
+
+    // Show day intro status briefly (story beat)
+    if (this.dayIntroTimer > 0) {
+      this.dayIntroTimer = Math.max(0, this.dayIntroTimer - deltaTime);
+      status = story.introStatus;
+    }
 
     if (this.isCharging) {
       status = `Charging... ${Math.round(this.gameState.battery)}%`;
@@ -387,6 +466,7 @@ export class Engine {
 
     if (drainRate > 0) {
       this.gameState.battery = Math.max(0, this.gameState.battery - drainRate * deltaTime);
+      if (Math.random() < 0.02) this.saveProgress();
     }
 
     // === Game over when out of battery ===
@@ -447,12 +527,16 @@ export class Engine {
       this.gameState.battery = MAX_BATTERY; // Reward full battery
       this.spawnDirtForDay(this.day);
       status = `Day ${this.day - 1} Complete! Welcome to Day ${this.day}`;
+      this.saveProgress();
     }
 
     // === Movement resolution ===
     if (this.bumpTimer > 0) {
       this.bumpTimer = Math.max(0, this.bumpTimer - deltaTime);
       status = 'Recovering...';
+      // Apply a short pushback; don't allow drifting upward.
+      const bumpSpeed = 0.9;
+      this.robot.group.position.addScaledVector(this.bumpDir, bumpSpeed * deltaTime);
     } else if (hitWall && isMoving) {
       this.audioManager.setMovement(false);
       if (hitHusky) {
@@ -465,6 +549,18 @@ export class Engine {
       this.audioManager.setMovement(true);
     } else {
       this.audioManager.setMovement(false);
+    }
+
+    // === Camera shake on impact ===
+    if (this.cameraShakeTimer > 0) {
+      this.cameraShakeTimer = Math.max(0, this.cameraShakeTimer - deltaTime);
+      const t = this.cameraShakeTimer / 0.25;
+      const amp = 0.01 * t;
+      const sx = (Math.random() * 2 - 1) * amp;
+      const sz = (Math.random() * 2 - 1) * amp;
+      this.robot.cameraGroup.position.set(sx, 0, sz);
+    } else {
+      this.robot.cameraGroup.position.set(0, 0, 0);
     }
 
     this.updateHud(status);

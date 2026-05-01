@@ -6,7 +6,7 @@ export class Rat {
   public model: THREE.Group | undefined;
   
   private targetPosition = new THREE.Vector3();
-  private speed = 0.2; // Move faster so it doesn't look motionless
+  private speed = 0.2; // Realistic small animal movement speed
   private bounds = {
     minX: -4.0, maxX: 4.0,
     minZ: -4.0, maxZ: 4.0
@@ -25,20 +25,8 @@ export class Rat {
       });
       this.model.position.y = 0;
 
-      // Auto-scale the rat to a realistic target size (~12cm = 0.12 units tall)
-      // This is robust regardless of what scale the GLB was exported at
-      this.model.scale.setScalar(1); // reset first
-      this.model.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(this.model);
-      const size = new THREE.Vector3();
-      box.getSize(size);
-      const dominantDim = Math.max(size.x, size.y, size.z);
-      const TARGET_RAT_SIZE = 0.12; // 12cm
-      if (dominantDim > 0) {
-        this.group.scale.setScalar(TARGET_RAT_SIZE / dominantDim);
-      } else {
-        this.group.scale.setScalar(0.002); // fallback
-      }
+      this.group.scale.setScalar(0.0001); // Fixed scale as requested
+
 
       this.group.add(this.model);
     }

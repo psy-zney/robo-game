@@ -56,7 +56,8 @@ export class DirtSpawner {
   public async spawnForDay(
     day: number,
     floorY: number,
-    collidableMeshes: THREE.Object3D[]
+    collidableMeshes: THREE.Object3D[],
+    dirtWeights?: Record<string, number>
   ): Promise<DirtSpot[]> {
     // Xóa vết bẩn cũ - Clear old spots
     this.clearAll();
@@ -96,8 +97,8 @@ export class DirtSpawner {
       });
       if (tooClose) continue;
 
-      // Random loại vết bẩn - Pick random dirt config
-      const config = availableConfigs[Math.floor(Math.random() * availableConfigs.length)];
+      // Pick dirt config (optionally weighted by story/day)
+      const config = this.pickConfig(availableConfigs, dirtWeights);
 
       // Tạo mesh plane - Create visual mesh
       const texture = await this.loadTexture(config.texture);
@@ -136,6 +137,31 @@ export class DirtSpawner {
     }
 
     return this.spots;
+  }
+
+  private pickConfig(configs: DirtConfig[], weights?: Record<string, number>): DirtConfig {
+    if (!weights) {
+      return configs[Math.floor(Math.random() * configs.length)];
+    }
+
+    // Build weighted list based on DirtConfig.name
+    let total = 0;
+    for (const c of configs) {
+      const w = weights[c.name] ?? 1;
+      if (w > 0) total += w;
+    }
+    if (total <= 0) {
+      return configs[Math.floor(Math.random() * configs.length)];
+    }
+
+    let r = Math.random() * total;
+    for (const c of configs) {
+      const w = weights[c.name] ?? 1;
+      if (w <= 0) continue;
+      r -= w;
+      if (r <= 0) return c;
+    }
+    return configs[configs.length - 1];
   }
 
   /**

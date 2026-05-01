@@ -34,7 +34,7 @@ export class Robot {
       });
 
       // Force scale to exactly 0.01 as tested in editor
-      this.robotModel.scale.setScalar(0.003);
+      this.robotModel.scale.setScalar(0.005);
 
       // Slight offset to prevent Z-fighting with floor
       // Nâng nhẹ lên 1 chút xíu để không bị kẹt mặt sàn
@@ -50,10 +50,11 @@ export class Robot {
       this.group.add(this.robotModel);
     }
 
-    // POV camera setup (Attached to top of robot)
+    // Close third-person camera (see half of robot body)
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
-    this.camera.position.set(0, 0.15, 0.05); // Low camera, exactly at POV height, safely inside collision radius
-    this.camera.rotation.x = -0.1; // Looking very slightly down
+    // Pull camera back a bit so the robot's top/front is visible.
+    this.camera.position.set(0, 0.22, 0.28);
+    this.camera.rotation.x = -0.35;
 
     // Use an independent camera group so mouse drag can look around WITHOUT rotating the robot body
     this.cameraGroup.add(this.camera);

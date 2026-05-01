@@ -6,6 +6,7 @@ export class UIManager {
   private storageBar: HTMLElement | null;
   private statusElement: HTMLElement | null;
   private dayElement: HTMLElement | null;
+  private missionElement: HTMLElement | null;
 
   constructor() {
     this.batteryElement = document.getElementById('battery');
@@ -15,6 +16,7 @@ export class UIManager {
     this.storageBar = document.getElementById('storage-bar');
     this.statusElement = document.getElementById('status');
     this.dayElement = document.getElementById('day-counter');
+    this.missionElement = document.getElementById('mission');
 
     this.setupMenuNavigation();
   }
@@ -58,7 +60,7 @@ export class UIManager {
 
   public update(
     battery: number, cleaned: number, total: number,
-    storage: number, capacity: number, status: string, day: number
+    storage: number, capacity: number, status: string, day: number, mission?: string
   ) {
 
     if (this.batteryElement && this.batteryBar) {
@@ -110,6 +112,10 @@ export class UIManager {
 
     if (this.dayElement) {
       this.dayElement.textContent = `DAY ${day}`;
+    }
+
+    if (this.missionElement) {
+      this.missionElement.textContent = (mission ?? '').toUpperCase();
     }
   }
 }

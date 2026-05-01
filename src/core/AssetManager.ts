@@ -37,8 +37,8 @@ export class AssetManager {
       console.warn(`Model ${name} not found!`);
       return undefined;
     }
-    // SkinnedMesh clone bug fix: Do not clone animated entities like Husky and Robot
-    if (name === 'husky' || name === 'robot') {
+    // SkinnedMesh clone bug fix: Do not clone animated entities like Husky, Robot, and Rat
+    if (name === 'husky' || name === 'robot' || name === 'Rat') {
       return asset.scene;
     }
     // Clone recursively for static obstacles

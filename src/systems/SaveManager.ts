@@ -3,6 +3,7 @@ export interface SaveData {
   cleanedCount: number;
   day: number;
   money: number;
+  highestDay: number;
 }
 
 const STORAGE_KEY = 'robot-vacuum-save';
@@ -20,11 +21,14 @@ export class SaveManager {
 
     try {
       const parsed = JSON.parse(raw) as Partial<SaveData>;
+      const day = Number(parsed.day) || 1;
+      const highestDay = Number(parsed.highestDay) || day;
       return {
         battery: Number(parsed.battery) || 100,
         cleanedCount: Number(parsed.cleanedCount) || 0,
-        day: Number(parsed.day) || 1,
+        day,
         money: Number(parsed.money) || 0,
+        highestDay,
       };
     } catch {
       return null;

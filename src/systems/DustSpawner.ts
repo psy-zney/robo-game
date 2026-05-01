@@ -17,7 +17,7 @@ export class DustSpawner {
     this.scene.add(this.dustGroup);
   }
 
-  public spawnForDay(dayNumber: number, floorY: number) {
+  public spawnForDay(dayNumber: number, floorY: number, color: number = 0xcccccc) {
     // Clear old dust
     for (const p of this.particles) {
       this.dustGroup.remove(p.mesh);
@@ -27,7 +27,7 @@ export class DustSpawner {
     const numDust = 20 + dayNumber * 5;
     const geometry = new THREE.SphereGeometry(0.02, 8, 8);
     const material = new THREE.MeshStandardMaterial({
-      color: 0xcccccc,
+      color,
       roughness: 0.8,
     });
 

@@ -64,15 +64,19 @@ export class InputManager {
   private setKey(code: string, value: boolean) {
     switch (code) {
       case 'KeyW':
+      case 'ArrowUp':
         this.state.forward = value;
         break;
       case 'KeyS':
+      case 'ArrowDown':
         this.state.backward = value;
         break;
       case 'KeyA':
+      case 'ArrowLeft':
         this.state.left = value;
         break;
       case 'KeyD':
+      case 'ArrowRight':
         this.state.right = value;
         break;
       case 'KeyQ':

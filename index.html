@@ -8,24 +8,53 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <!-- Start Screen -->
+    <!-- Start / Hub Screen -->
     <div id="start-screen" class="screen active">
-      <div class="start-content">
-        <img src="/image/logo.png" alt="RoboClean Logo" class="game-logo" />
-        <h1 class="game-title">ROBO<span class="text-accent">CLEAN</span></h1>
-        <p class="game-subtitle">Next-Gen Autonomous Protocol</p>
-        <button id="start-btn" class="cyber-btn">START SIMULATION</button>
+      <div class="hub">
+        <div class="hub-brand">
+          <img src="/image/logo.png" alt="RoboClean" class="brand-mark" />
+          <div class="brand-type">
+            <div class="brand-title">ROBOCLEAN</div>
+            <div class="brand-tagline">Autonomous Protocol, Day-by-Day</div>
+          </div>
+        </div>
+
+        <div class="hub-actions">
+          <button id="continue-btn" class="btn primary" disabled>CONTINUE</button>
+          <div id="continue-meta" class="meta muted">NO SAVE FOUND</div>
+
+          <div class="divider"></div>
+
+          <button id="new-run-btn" class="btn">NEW RUN</button>
+
+          <div class="replay">
+            <div class="replay-row">
+              <div class="label">REPLAY DAY</div>
+              <select id="replay-day" class="select" disabled></select>
+            </div>
+            <button id="replay-btn" class="btn" disabled>PLAY SELECTED DAY</button>
+          </div>
+        </div>
+
+        <div class="hub-foot">
+          <div class="key-hint"><span class="k">WASD</span> or <span class="k">ARROWS</span> move, <span class="k">E</span> sweep, <span class="k">R</span> mop</div>
+          <div class="key-hint muted">Click to lock mouse in game, press ESC to pause.</div>
+        </div>
       </div>
     </div>
 
     <!-- Loading Screen -->
     <div id="loading-screen" class="screen">
-      <div class="loading-content">
-        <div class="spinner"></div>
-        <h2 id="loading-text">INITIALIZING SYSTEMS...</h2>
-        <div class="progress-bar-container">
-          <div id="loading-progress" class="progress-bar-fill"></div>
+      <div class="load">
+        <div class="load-top">
+          <div class="load-dot"></div>
+          <div class="load-title">BOOT SEQUENCE</div>
         </div>
+        <div id="loading-text" class="load-line">INITIALIZING SYSTEMS...</div>
+        <div class="load-bar">
+          <div id="loading-progress" class="load-bar-fill"></div>
+        </div>
+        <div class="load-sub muted">Loading assets and calibrating sensors.</div>
       </div>
     </div>
 
@@ -63,6 +92,11 @@
           <span class="label">STATUS</span>
           <span id="status" class="value status-text">READY</span>
         </div>
+
+        <div class="hud-item text-right">
+          <span class="label">MISSION</span>
+          <span id="mission" class="value mission-text">RUN DIAGNOSTICS</span>
+        </div>
       </div>
 
       <div class="hud-panel bottom-center">
@@ -76,10 +110,29 @@
 
     <!-- Pause Screen -->
     <div id="pause-screen" class="screen">
-      <div class="pause-content glass-panel" style="text-align: center;">
-        <h1 class="game-title">PAUSED</h1>
-        <p class="game-subtitle">Simulation Suspended</p>
-        <p style="margin-top: 20px; color: var(--color-text);">Click anywhere to resume</p>
+      <div class="pause">
+        <div class="pause-head">
+          <div class="pause-title">PAUSED</div>
+          <div class="pause-sub muted">Simulation suspended.</div>
+        </div>
+
+        <div class="pause-actions">
+          <button id="resume-btn" class="btn primary">RESUME</button>
+          <button id="restart-day-btn" class="btn">RESTART DAY</button>
+          <button id="restart-run-btn" class="btn danger">RESTART RUN</button>
+        </div>
+
+        <div class="pause-controls">
+          <div class="controls-title muted">CONTROLS</div>
+          <div class="controls-grid">
+            <div class="controls-item"><span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> <span class="muted">move</span></div>
+            <div class="controls-item"><span class="k">↑</span><span class="k">←</span><span class="k">↓</span><span class="k">→</span> <span class="muted">move</span></div>
+            <div class="controls-item"><span class="k">E</span> <span class="muted">sweep</span></div>
+            <div class="controls-item"><span class="k">R</span> <span class="muted">mop</span></div>
+            <div class="controls-item"><span class="k">ESC</span> <span class="muted">pause</span></div>
+            <div class="controls-item"><span class="k">CLICK</span> <span class="muted">lock mouse</span></div>
+          </div>
+        </div>
       </div>
     </div>
 

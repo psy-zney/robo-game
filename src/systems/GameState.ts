@@ -27,11 +27,14 @@ export class GameState {
   }
 
   public saveState() {
+    const existing = SaveManager.load();
+    const highestDay = Math.max(existing?.highestDay ?? 1, this.day);
     SaveManager.save({
       battery: this.battery,
       cleanedCount: this.cleanedCells,
       day: this.day,
       money: this.money,
+      highestDay,
     });
   }
 
