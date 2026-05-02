@@ -22,7 +22,7 @@ export const BATTERY_DRAIN_MOP = 2.0;    // Mopping action
 
 // Charge station
 export const CHARGE_RATE = 100 / 30;     // Full charge in 30 seconds (~3.33/s)
-export const CHARGE_RADIUS = 0.5;        // Interaction radius
+export const CHARGE_RADIUS = 0.425;      // Interaction radius
 
 // Dirt system
 export const DIRT_PLANE_SIZE = 0.4;       // Visual size on floor

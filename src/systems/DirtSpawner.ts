@@ -182,16 +182,16 @@ export class DirtSpawner {
 
     if (hits.length === 0) return false;
 
-    // Điểm đầu tiên chạm phải gần mặt sàn (sai số 0.1m) - First hit must be near floor level
-    const hitY = hits[0].point.y;
-    if (Math.abs(hitY - floorY) > 0.15) return false;
+    // Tìm điểm chạm gần mặt sàn nhất (bỏ qua trần nhà nếu tia bắn xuyên qua)
+    const validHit = hits.find(h => Math.abs(h.point.y - floorY) <= 0.25);
+    if (!validHit) return false;
 
     // Bắn tia từ dưới lên để kiểm tra không bị đồ vật đè - Raycast up to check nothing above
-    const rayOriginUp = new THREE.Vector3(x, floorY + 0.01, z);
+    const rayOriginUp = new THREE.Vector3(x, floorY + 0.05, z);
     raycaster.set(rayOriginUp, upDir);
     const hitsUp = raycaster.intersectObjects(collidableMeshes, true);
 
-    // Nếu có vật thể ở rất gần phía trên (< 0.3m), vị trí không hợp lệ (dưới bàn, ghế...)
+    // Nếu có vật thể ở rất gần phía trên (< 0.3m), vị trí không hợp lệ (dưới gầm thấp)
     if (hitsUp.length > 0 && hitsUp[0].distance < 0.3) {
       return false;
     }

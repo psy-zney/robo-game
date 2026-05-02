@@ -36,14 +36,12 @@ export class Robot {
       // Force scale to exactly 0.01 as tested in editor
       this.robotModel.scale.setScalar(0.005);
 
-      // Slight offset to prevent Z-fighting with floor
-      // Nâng nhẹ lên 1 chút xíu để không bị kẹt mặt sàn
-      this.robotModel.position.y = 0.002;
+      // Căn tọa độ thủ công để robot chạm sàn
+      this.robotModel.position.y = -0.35;
 
       // ROTATION FIX: Rotate the model so the "dot" faces forward (-Z)
       this.robotModel.rotation.y = Math.PI;
 
-      // Xóa logic căn tâm bằng Box3 vì nó bị lỗi do mô hình không đối xứng.
       // Thay vào đó, chỉnh tay bù trừ nhẹ sang trái (âm X) để căn giữa bằng mắt thường
       this.robotModel.position.x = -0.015;
 
@@ -53,7 +51,7 @@ export class Robot {
     // Close third-person camera (see half of robot body)
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
     // Pull camera back a bit so the robot's top/front is visible.
-    this.camera.position.set(0, 0.22, 0.28);
+    this.camera.position.set(0, -0.25, 0.28);
     this.camera.rotation.x = -0.35;
 
     // Use an independent camera group so mouse drag can look around WITHOUT rotating the robot body

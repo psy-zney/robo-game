@@ -21,7 +21,7 @@ import { SaveManager } from '../systems/SaveManager';
 
 // Fixed robot spawn / charge station position
 // Y values will be set dynamically after house alignment — use floorY at runtime
-const ROBOT_SPAWN = { x: 2.146, z: -0.474 };
+const ROBOT_SPAWN = { x: 4.0, z: -0.8 };
 const HUSKY_SPAWN = { x: 0.337, z: -1.868 };
 const CHARGE_STATION = { x: 4.0, z: -0.8 }; // Matches createChargeStation() position
 
@@ -138,15 +138,7 @@ export class Engine {
       this.floorY = -0.412;
     }
 
-    // Add coordinate grid and axes helper for visualization
-    // Lưới và trục tọa độ nằm tại y=0 (cùng mặt phẳng sàn)
-    const gridHelper = new THREE.GridHelper(30, 30, 0x0000ff, 0x808080);
-    gridHelper.position.y = this.floorY + 0.01;
-    this.scene.add(gridHelper);
 
-    const axesHelper = new THREE.AxesHelper(5);
-    axesHelper.position.y = this.floorY + 0.01;
-    this.scene.add(axesHelper);
 
     // Charge station visual (glowing ring)
     this.createChargeStation();
@@ -193,7 +185,7 @@ export class Engine {
 
   /** Create glowing ring for charge station */
   private createChargeStation() {
-    const geo = new THREE.RingGeometry(0.3, CHARGE_RADIUS, 32);
+    const geo = new THREE.RingGeometry(0.255, CHARGE_RADIUS, 32);
     const mat = new THREE.MeshStandardMaterial({
       color: 0x00ff88,
       emissive: 0x00ff88,
@@ -355,8 +347,8 @@ export class Engine {
       const dist = this.rayDir.length();
       if (dist > 0) {
         this.rayDir.normalize();
-        const STOP_DIST = 0.3; // Increased to ensure robust boundary and prevent wall clipping
-        const RAY_SPREAD = 0.2; // Slightly wider spread to catch corners
+        const STOP_DIST = 0.15; // Giảm xuống để tiến sát tường hơn
+        const RAY_SPREAD = 0.15; // Thu hẹp tia quét ngang cho vừa với kích thước robot
         const leftOffset1 = new THREE.Vector3(-this.rayDir.z, 0, this.rayDir.x).multiplyScalar(RAY_SPREAD);
         const rightOffset1 = new THREE.Vector3(this.rayDir.z, 0, -this.rayDir.x).multiplyScalar(RAY_SPREAD);
         const leftOffset2 = new THREE.Vector3(-this.rayDir.z, 0, this.rayDir.x).multiplyScalar(RAY_SPREAD * 0.5);
