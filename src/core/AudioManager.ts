@@ -8,6 +8,11 @@ export class AudioManager {
   private backgroundGain: GainNode | null = null;
   private initialized = false;
 
+  // Audio settings
+  private masterVolume = 0.8;
+  private sfxVolume = 0.7;
+  private musicVolume = 0.3;
+
   public initOnUserGesture() {
     window.addEventListener(
       'pointerdown',
@@ -25,10 +30,17 @@ export class AudioManager {
 
     const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtor) {
+      console.warn('Web Audio API not supported');
       return;
     }
 
     this.audioCtx = new AudioCtor();
+
+    // Create master gain for volume control
+    const masterGain = this.audioCtx.createGain();
+    masterGain.gain.value = this.masterVolume;
+    masterGain.connect(this.audioCtx.destination);
+
     this.motorGain = this.audioCtx.createGain();
     this.motorGain.gain.value = 0;
 
@@ -38,11 +50,11 @@ export class AudioManager {
     this.motorFilter.Q.value = 1.3;
 
     this.backgroundGain = this.audioCtx.createGain();
-    this.backgroundGain.gain.value = 0.015;
+    this.backgroundGain.gain.value = this.musicVolume * 0.05;
 
     this.motorGain.connect(this.motorFilter);
-    this.motorFilter.connect(this.audioCtx.destination);
-    this.backgroundGain.connect(this.audioCtx.destination);
+    this.motorFilter.connect(masterGain);
+    this.backgroundGain.connect(masterGain);
 
     this.motorOsc = this.audioCtx.createOscillator();
     this.motorOsc.type = 'sine';
@@ -63,6 +75,23 @@ export class AudioManager {
     this.backgroundOsc2.start();
 
     this.initialized = true;
+    console.log('🔊 Audio system initialized');
+  }
+
+  // Volume control
+  public setMasterVolume(volume: number) {
+    this.masterVolume = Math.max(0, Math.min(1, volume));
+  }
+
+  public setSfxVolume(volume: number) {
+    this.sfxVolume = Math.max(0, Math.min(1, volume));
+  }
+
+  public setMusicVolume(volume: number) {
+    this.musicVolume = Math.max(0, Math.min(1, volume));
+    if (this.backgroundGain) {
+      this.backgroundGain.gain.value = this.musicVolume * 0.05;
+    }
   }
 
   public setMovement(active: boolean) {
@@ -70,7 +99,7 @@ export class AudioManager {
       return;
     }
 
-    const targetVolume = active ? 0.04 : 0;
+    const targetVolume = active ? 0.04 * this.sfxVolume : 0;
     this.motorGain.gain.cancelScheduledValues(this.audioCtx.currentTime);
     this.motorGain.gain.setTargetAtTime(targetVolume, this.audioCtx.currentTime, 0.12);
     if (active && this.motorOsc) {
@@ -93,7 +122,7 @@ export class AudioManager {
 
     osc.type = 'triangle';
     osc.frequency.value = 280;
-    gain.gain.value = 0.08;
+    gain.gain.value = 0.08 * this.sfxVolume;
     gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.15);
 
     osc.connect(filter);
@@ -117,7 +146,7 @@ export class AudioManager {
 
     osc.type = 'triangle';
     osc.frequency.value = 600;
-    gain.gain.value = 0.08;
+    gain.gain.value = 0.08 * this.sfxVolume;
     gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.12);
 
     osc.connect(filter);
@@ -150,7 +179,7 @@ export class AudioManager {
     filter.frequency.value = 3000;
     filter.Q.value = 0.5;
     const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.setValueAtTime(0.12 * this.sfxVolume, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
     source.connect(filter);
     filter.connect(gain);
@@ -169,7 +198,7 @@ export class AudioManager {
     osc.frequency.exponentialRampToValueAtTime(80, t + 0.2);
 
     const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.1, t);
+    gain.gain.setValueAtTime(0.1 * this.sfxVolume, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
 
     const filter = this.audioCtx.createBiquadFilter();
@@ -197,7 +226,7 @@ export class AudioManager {
       osc.frequency.exponentialRampToValueAtTime(250, t + offset + 0.12);
 
       const gain = this.audioCtx.createGain();
-      gain.gain.setValueAtTime(0.15, t + offset);
+      gain.gain.setValueAtTime(0.15 * this.sfxVolume, t + offset);
       gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.12);
 
       const filter = this.audioCtx.createBiquadFilter();
@@ -226,8 +255,8 @@ export class AudioManager {
     osc.frequency.linearRampToValueAtTime(120, t + 0.4);
 
     const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.2, t);
-    gain.gain.linearRampToValueAtTime(0.25, t + 0.15);
+    gain.gain.setValueAtTime(0.2 * this.sfxVolume, t);
+    gain.gain.linearRampToValueAtTime(0.25 * this.sfxVolume, t + 0.15);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
 
     const filter = this.audioCtx.createBiquadFilter();
@@ -252,8 +281,8 @@ export class AudioManager {
 
     const gain = this.audioCtx.createGain();
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.03, t + 0.1);
-    gain.gain.linearRampToValueAtTime(0.03, t + 0.3);
+    gain.gain.linearRampToValueAtTime(0.03 * this.sfxVolume, t + 0.1);
+    gain.gain.linearRampToValueAtTime(0.03 * this.sfxVolume, t + 0.3);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
 
     osc.connect(gain);
@@ -275,7 +304,7 @@ export class AudioManager {
       osc.frequency.value = freq;
 
       const gain = this.audioCtx!.createGain();
-      gain.gain.setValueAtTime(0.1, t + offset);
+      gain.gain.setValueAtTime(0.1 * this.sfxVolume, t + offset);
       gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.3);
 
       osc.connect(gain);
@@ -294,12 +323,173 @@ export class AudioManager {
     osc.frequency.value = 150;
 
     const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.06, t);
+    gain.gain.setValueAtTime(0.06 * this.sfxVolume, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
 
     osc.connect(gain);
     gain.connect(this.audioCtx.destination);
     osc.start(t);
     osc.stop(t + 0.15);
+  }
+
+  /** Âm thanh va chạm tường - Wall collision sound */
+  public playWallHit() {
+    if (!this.audioCtx) return;
+    const t = this.audioCtx.currentTime;
+
+    // Create a thud sound
+    const osc = this.audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(50, t + 0.1);
+
+    const gain = this.audioCtx.createGain();
+    gain.gain.setValueAtTime(0.15 * this.sfxVolume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+
+    const filter = this.audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 300;
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.15);
+  }
+
+  /** Âm thanh va chạm với Husky - Husky collision sound */
+  public playHuskyCollision() {
+    if (!this.audioCtx) return;
+    const t = this.audioCtx.currentTime;
+
+    // Impact sound
+    const osc = this.audioCtx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(200, t);
+    osc.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+
+    const gain = this.audioCtx.createGain();
+    gain.gain.setValueAtTime(0.2 * this.sfxVolume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+
+    const filter = this.audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 400;
+    filter.Q.value = 2;
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.25);
+  }
+
+  /** Âm thanh sạc pin đầy - Battery full sound */
+  public playBatteryFull() {
+    if (!this.audioCtx) return;
+    const t = this.audioCtx.currentTime;
+
+    // Ascending chime
+    const notes = [523, 659, 784]; // C5, E5, G5
+    notes.forEach((freq, i) => {
+      const offset = i * 0.08;
+      const osc = this.audioCtx!.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+
+      const gain = this.audioCtx!.createGain();
+      gain.gain.setValueAtTime(0.08 * this.sfxVolume, t + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.2);
+
+      osc.connect(gain);
+      gain.connect(this.audioCtx!.destination);
+      osc.start(t + offset);
+      osc.stop(t + offset + 0.2);
+    });
+  }
+
+  /** Âm thanh hết pin - Battery low warning */
+  public playBatteryLow() {
+    if (!this.audioCtx) return;
+    const t = this.audioCtx.currentTime;
+
+    // Warning beep
+    const osc = this.audioCtx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.setValueAtTime(660, t + 0.1);
+
+    const gain = this.audioCtx.createGain();
+    gain.gain.setValueAtTime(0.1 * this.sfxVolume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+
+    osc.connect(gain);
+    gain.connect(this.audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  }
+
+  /** Âm thanh game over - Game over sound */
+  public playGameOver() {
+    if (!this.audioCtx) return;
+    const t = this.audioCtx.currentTime;
+
+    // Descending failure sound
+    const notes = [440, 392, 349, 294]; // A4, G4, F4, D4
+    notes.forEach((freq, i) => {
+      const offset = i * 0.15;
+      const osc = this.audioCtx!.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq;
+
+      const gain = this.audioCtx!.createGain();
+      gain.gain.setValueAtTime(0.12 * this.sfxVolume, t + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.3);
+
+      osc.connect(gain);
+      gain.connect(this.audioCtx!.destination);
+      osc.start(t + offset);
+      osc.stop(t + offset + 0.3);
+    });
+  }
+
+  /** Âm thanh thu thập item - Item collection sound */
+  public playCollectItem() {
+    if (!this.audioCtx) return;
+    const t = this.audioCtx.currentTime;
+
+    const osc = this.audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.exponentialRampToValueAtTime(1760, t + 0.1);
+
+    const gain = this.audioCtx.createGain();
+    gain.gain.setValueAtTime(0.1 * this.sfxVolume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+
+    osc.connect(gain);
+    gain.connect(this.audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.15);
+  }
+
+  /** Âm thanh storage đầy - Storage full warning */
+  public playStorageFull() {
+    if (!this.audioCtx) return;
+    const t = this.audioCtx.currentTime;
+
+    const osc = this.audioCtx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = 220;
+
+    const gain = this.audioCtx.createGain();
+    gain.gain.setValueAtTime(0.08 * this.sfxVolume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+
+    osc.connect(gain);
+    gain.connect(this.audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.2);
   }
 }

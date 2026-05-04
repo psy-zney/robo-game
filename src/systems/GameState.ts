@@ -35,6 +35,9 @@ export class GameState {
       day: this.day,
       money: this.money,
       highestDay,
+      version: '1.0.0',
+      timestamp: Date.now(),
+      playtime: 0,
     });
   }
 

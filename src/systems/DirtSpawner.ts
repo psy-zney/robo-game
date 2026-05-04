@@ -59,6 +59,8 @@ export class DirtSpawner {
     collidableMeshes: THREE.Object3D[],
     dirtWeights?: Record<string, number>
   ): Promise<DirtSpot[]> {
+    console.log(`🧹 Spawning dirt for Day ${day}...`);
+
     // Xóa vết bẩn cũ - Clear old spots
     this.clearAll();
 
@@ -66,9 +68,16 @@ export class DirtSpawner {
     const baseCount = 3;
     const count = baseCount + Math.floor(day * 1.5);
 
+    console.log(`   Target: ${count} dirt spots`);
+
     // Lọc các loại vết bẩn hợp lệ cho ngày hiện tại - Filter configs available for this day
     const availableConfigs = DIRT_CONFIGS.filter(c => c.minDay < day);
-    if (availableConfigs.length === 0) return [];
+    if (availableConfigs.length === 0) {
+      console.warn('⚠️ No dirt configs available for this day');
+      return [];
+    }
+
+    console.log(`   Available dirt types: ${availableConfigs.map(c => c.name).join(', ')}`);
 
     const raycaster = new THREE.Raycaster();
     const downDir = new THREE.Vector3(0, -1, 0);
@@ -76,6 +85,8 @@ export class DirtSpawner {
 
     let attempts = 0;
     const maxAttempts = count * 10;
+    let validPositions = 0;
+    let invalidPositions = 0;
 
     while (this.spots.length < count && attempts < maxAttempts) {
       attempts++;
@@ -86,8 +97,11 @@ export class DirtSpawner {
 
       // Kiểm tra vị trí hợp lệ (trên sàn, không trên tường/đồ vật) - Validate position
       if (!this.isValidFloorPosition(x, z, floorY, collidableMeshes, raycaster, downDir, upDir)) {
+        invalidPositions++;
         continue;
       }
+
+      validPositions++;
 
       // Kiểm tra không trùng vị trí vết bẩn khác - Check overlap with existing spots
       const tooClose = this.spots.some(s => {
@@ -110,6 +124,7 @@ export class DirtSpawner {
         roughness: 0.95,
         metalness: 0,
         depthWrite: false,
+        side: THREE.DoubleSide, // Render both sides for better visibility
       });
 
       const mesh = new THREE.Mesh(geometry, material);
@@ -117,6 +132,7 @@ export class DirtSpawner {
       mesh.position.set(x, floorY + 0.005, z); // Nổi lên chút xíu so với sàn
       mesh.rotation.z = Math.random() * Math.PI * 2; // Xoay ngẫu nhiên cho tự nhiên
       mesh.receiveShadow = true;
+      mesh.castShadow = true; // Cast shadow for better depth perception
 
       // Xác định trạng thái ban đầu - Determine initial step
       let currentStep: DirtSpot['currentStep'] = 'needs_sweep';
@@ -135,6 +151,8 @@ export class DirtSpawner {
       this.spots.push(spot);
       this.group.add(mesh);
     }
+
+    console.log(`✅ Spawned ${this.spots.length}/${count} dirt spots (${attempts} attempts, ${validPositions} valid, ${invalidPositions} invalid)`);
 
     return this.spots;
   }
@@ -235,7 +253,9 @@ export class DirtSpawner {
       // Đã quét xong, chuyển sang lau - Swept, now needs mopping
       spot.currentStep = 'needs_mop';
       // Thay đổi opacity để thể hiện tiến trình
-      (spot.mesh.material as THREE.MeshStandardMaterial).opacity = 0.6;
+      const mat = spot.mesh.material as THREE.MeshStandardMaterial;
+      mat.opacity = 0.6;
+      mat.color.setHex(0x88ccff); // Blue tint to show it's been swept
       return 'progress';
     }
 
@@ -247,7 +267,8 @@ export class DirtSpawner {
 
     // Giảm opacity để thể hiện tiến trình - Reduce opacity to show progress
     const progress = spot.remainingActions / spot.config.requiredActions;
-    (spot.mesh.material as THREE.MeshStandardMaterial).opacity = 0.3 + progress * 0.7;
+    const mat = spot.mesh.material as THREE.MeshStandardMaterial;
+    mat.opacity = 0.3 + progress * 0.7;
     return 'progress';
   }
 
@@ -270,7 +291,10 @@ export class DirtSpawner {
 
     // Giảm opacity để thể hiện tiến trình - Reduce opacity to show progress
     const progress = spot.remainingActions / spot.config.requiredActions;
-    (spot.mesh.material as THREE.MeshStandardMaterial).opacity = 0.3 + progress * 0.7;
+    const mat = spot.mesh.material as THREE.MeshStandardMaterial;
+    mat.opacity = 0.3 + progress * 0.7;
+    // Add green tint to show mopping progress
+    mat.color.setHex(0x88ffaa);
     return 'progress';
   }
 
@@ -309,22 +333,89 @@ export class DirtSpawner {
     return this.spots.length;
   }
 
-  /** Load texture với cache - Load texture with caching */
+  /** Debug: Get detailed information about all spots */
+  public getDebugInfo(): Array<{name: string, position: {x: number, z: number}, remaining: number, step: string}> {
+    return this.spots.map(spot => ({
+      name: spot.config.name,
+      position: { x: spot.mesh.position.x, z: spot.mesh.position.z },
+      remaining: spot.remainingActions,
+      step: spot.currentStep
+    }));
+  }
+
+  /** Force refresh all dirt spots (useful for debugging) */
+  public forceRefresh() {
+    console.log('🔄 Force refreshing all dirt spots...');
+    this.spots.forEach(spot => {
+      const material = spot.mesh.material as THREE.MeshStandardMaterial;
+      material.needsUpdate = true;
+    });
+  }
+
+  /** Load texture với cache và error handling - Load texture with caching and error handling */
   private async loadTexture(path: string): Promise<THREE.Texture> {
     const cached = this.textureCache.get(path);
     if (cached) return cached;
 
     return new Promise<THREE.Texture>((resolve) => {
-      this.textureLoader.load(path, (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        this.textureCache.set(path, tex);
-        resolve(tex);
-      }, undefined, () => {
-        // Fallback texture nếu load thất bại - Fallback if load fails
-        const fallback = new THREE.Texture();
-        this.textureCache.set(path, fallback);
-        resolve(fallback);
-      });
+      this.textureLoader.load(
+        path,
+        (tex) => {
+          // Success: optimize texture settings
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.wrapT = THREE.RepeatWrapping;
+          tex.minFilter = THREE.LinearMipmapLinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.anisotropy = 4; // Better quality at angles
+
+          this.textureCache.set(path, tex);
+          console.log(`✅ Loaded texture: ${path}`);
+          resolve(tex);
+        },
+        (progress) => {
+          // Optional: Log loading progress
+          if (progress.total > 0) {
+            const percent = (progress.loaded / progress.total) * 100;
+            console.log(`Loading ${path}: ${percent.toFixed(1)}%`);
+          }
+        },
+        (error) => {
+          // Error: Create fallback texture
+          console.warn(`⚠️ Failed to load texture: ${path}`, error);
+
+          // Create procedural fallback texture
+          const canvas = document.createElement('canvas');
+          canvas.width = 128;
+          canvas.height = 128;
+          const ctx = canvas.getContext('2d');
+
+          if (ctx) {
+            // Create a simple dirt-like pattern
+            const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+            gradient.addColorStop(0, 'rgba(139, 119, 101, 0.8)');
+            gradient.addColorStop(1, 'rgba(101, 85, 72, 0.6)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 128, 128);
+
+            // Add some noise
+            for (let i = 0; i < 100; i++) {
+              ctx.fillStyle = `rgba(${100 + Math.random() * 50}, ${80 + Math.random() * 40}, ${60 + Math.random() * 30}, ${0.3 + Math.random() * 0.4})`;
+              ctx.beginPath();
+              ctx.arc(Math.random() * 128, Math.random() * 128, 2 + Math.random() * 4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+
+          const fallbackTex = new THREE.CanvasTexture(canvas);
+          fallbackTex.colorSpace = THREE.SRGBColorSpace;
+          fallbackTex.wrapS = THREE.RepeatWrapping;
+          fallbackTex.wrapT = THREE.RepeatWrapping;
+
+          this.textureCache.set(path, fallbackTex);
+          resolve(fallbackTex);
+        }
+      );
     });
   }
 }

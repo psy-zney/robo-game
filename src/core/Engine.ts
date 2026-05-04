@@ -9,7 +9,7 @@ import { Husky } from '../entities/Husky';
 import { ObstacleSpawner } from '../systems/ObstacleSpawner';
 import { DirtSpawner } from '../systems/DirtSpawner';
 import { DustSpawner } from '../systems/DustSpawner';
-import { getDayStory } from '../systems/StorySystem';
+import { getDayStory, getDifficultyMultiplier, hasSpecialEvent } from '../systems/StorySystem';
 import {
   MOVE_SPEED, SWEEP_SPEED, MOP_SPEED, HOME_SCALE,
   CHARGE_RATE, CHARGE_RADIUS,
@@ -206,11 +206,26 @@ export class Engine {
     this.dayMission = story.mission;
     this.dayIntroTimer = 3.5;
 
+    const difficultyMultiplier = getDifficultyMultiplier(day);
+
+    // Apply special events
+    if (hasSpecialEvent(day, 'reduced_battery')) {
+      this.gameState.battery = Math.max(20, this.gameState.battery * 0.7);
+      console.log('⚠️ Special event: Reduced battery');
+    }
+
+    if (hasSpecialEvent(day, 'husky_aggressive')) {
+      console.log('⚠️ Special event: Aggressive husky');
+    }
+
     await this.dirtSpawner.spawnForDay(day, this.floorY, this.collidableMeshes, story.dirtWeights);
     this.dustSpawner.spawnForDay(day, this.floorY, story.dustColor);
+
     const total = this.dirtSpawner.getTotalCount();
     this.gameState.totalCells = total;
     this.gameState.cleanedCells = 0;
+
+    console.log(`📊 Day ${day} difficulty: ${difficultyMultiplier}x, Total dirt: ${total}`);
 
     this.saveProgress();
   }
@@ -224,6 +239,9 @@ export class Engine {
       day: this.day,
       money: 0,
       highestDay,
+      version: '1.0.0',
+      timestamp: Date.now(),
+      playtime: 0,
     });
   }
 
@@ -244,6 +262,8 @@ export class Engine {
 
   private updateHud(status: string) {
     const story = getDayStory(this.day);
+    const difficultyMultiplier = getDifficultyMultiplier(this.day);
+
     this.uiManager.update(
       this.gameState.battery,
       this.gameState.cleanedCells,
@@ -252,7 +272,8 @@ export class Engine {
       this.gameState.storageCapacity,
       status,
       this.day,
-      this.dayMission || story.mission
+      this.dayMission || story.mission,
+      difficultyMultiplier
     );
   }
 
@@ -314,12 +335,20 @@ export class Engine {
     // === Rat AI ===
     this.rat.update(deltaTime);
 
+    // === Dust particles update ===
+    this.dustSpawner.update(deltaTime);
+
     // === Husky random bite check ===
     this.huskyRandomTimer += deltaTime;
     if (this.huskyRandomTimer >= this.HUSKY_RANDOM_CHECK_INTERVAL) {
       this.huskyRandomTimer = 0;
-      const biteChance = HUSKY_RANDOM_BITE_BASE + (this.day - 1) * 0.01;
-      if (Math.random() < biteChance && this.husky.state !== 'chase') {
+      const difficultyMultiplier = getDifficultyMultiplier(this.day);
+      const biteChance = HUSKY_RANDOM_BITE_BASE * difficultyMultiplier + (this.day - 1) * 0.01;
+
+      // More aggressive on special event days
+      const aggressiveModifier = hasSpecialEvent(this.day, 'husky_aggressive') ? 1.5 : 1.0;
+
+      if (Math.random() < biteChance * aggressiveModifier && this.husky.state !== 'chase') {
         this.husky.startChase();
         this.audioManager.playBark();
       }
