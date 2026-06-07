@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { assetManager } from '../core/AssetManager';
+import { HUSKY_MODEL_TARGET_SIZE } from '../utils/constants';
 
 export type HuskyState = 'idle' | 'walk' | 'lie' | 'attack' | 'chase' | 'curious';
 
@@ -53,9 +54,8 @@ export class Husky {
       const size = new THREE.Vector3();
       box.getSize(size);
       const dominantDim = Math.max(size.x, size.y, size.z);
-      const TARGET_HUSKY_HEIGHT = 0.40;
       if (dominantDim > 0) {
-        this.group.scale.setScalar(TARGET_HUSKY_HEIGHT / dominantDim);
+        this.group.scale.setScalar(HUSKY_MODEL_TARGET_SIZE / dominantDim);
       } else {
         this.group.scale.setScalar(0.05); // fallback
       }
@@ -132,6 +132,15 @@ export class Husky {
       minZ: -4.0, maxZ: 4.0
     };
     this.pickNextState();
+  }
+
+  public setBounds(bounds: THREE.Box3) {
+    this.bounds = {
+      minX: bounds.min.x,
+      maxX: bounds.max.x,
+      minZ: bounds.min.z,
+      maxZ: bounds.max.z
+    };
   }
 
   private playAnimation(name: string) {

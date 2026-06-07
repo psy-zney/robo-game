@@ -44,10 +44,10 @@ const DAY_STORIES: Record<number, DayStory> = {
   },
   3: {
     title: 'Late-Night Mystery',
-    mission: 'SOMETHING DRIPPED. CLEAN STUBBORN STAINS.',
-    introStatus: 'ANOMALY DETECTED. VISUAL RESIDUE ON FLOOR SURFACES.',
+    mission: 'SOMETHING DRIPPED. CLEAN STICKY SAUCE STAINS.',
+    introStatus: 'ANOMALY DETECTED. RED RESIDUE ON FLOOR SURFACES.',
     dustColor: 0xa0a0a0,
-    dirtWeights: { 'Blood Stain': 1.3, 'Coffee Spill': 0.8, 'Thick Dust': 0.9 },
+    dirtWeights: { 'Sauce Stain': 1.3, 'Coffee Spill': 0.8, 'Thick Dust': 0.9 },
     difficultyMultiplier: 1.2,
   },
   4: {
@@ -71,7 +71,7 @@ const DAY_STORIES: Record<number, DayStory> = {
     mission: 'HUSKY GOT INTO EVERYTHING. CLEAN UP THE MESS.',
     introStatus: 'ANIMAL CONTAINMENT BREACH. MULTIPLE HAZARDS DETECTED.',
     dustColor: 0x8a8a8a,
-    dirtWeights: { 'Heavy Grime': 1.4, 'Stubborn Dirt': 1.2, 'Blood Stain': 0.8, 'Coffee Spill': 0.6 },
+    dirtWeights: { 'Heavy Grime': 1.4, 'Stubborn Dirt': 1.2, 'Sauce Stain': 0.8, 'Coffee Spill': 0.6 },
     difficultyMultiplier: 1.6,
     specialEvents: ['husky_aggressive'],
   },
@@ -108,7 +108,7 @@ const DAY_STORIES: Record<number, DayStory> = {
     dirtWeights: {
       'Heavy Grime': 1.5,
       'Stubborn Dirt': 1.3,
-      'Blood Stain': 1.0,
+      'Sauce Stain': 1.0,
       'Coffee Spill': 1.0,
       'Thick Dust': 0.8,
       Dust: 0.5
@@ -165,7 +165,7 @@ function generateProceduralStory(day: number): DayStory {
     dirtWeights = {
       'Heavy Grime': 1.2 + tier * 0.2,
       'Stubborn Dirt': 1.0 + tier * 0.15,
-      'Blood Stain': 0.8 + tier * 0.1,
+      'Sauce Stain': 0.8 + tier * 0.1,
       'Coffee Spill': 0.8 + tier * 0.1,
       'Thick Dust': 0.6 + tier * 0.05,
     };
@@ -201,4 +201,3 @@ export function hasSpecialEvent(day: number, event: string): boolean {
   const story = getDayStory(day);
   return story.specialEvents?.includes(event) || false;
 }
-

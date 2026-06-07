@@ -1,43 +1,87 @@
 import * as THREE from 'three';
-import { DIRT_PLANE_SIZE, DIRT_INTERACT_DIST } from '../utils/constants';
+import { DIRT_INTERACT_DIST, DIRT_PLANE_SIZE, getLevelTuning } from '../utils/constants';
 
-// Dirt types mapped to image files
 export type CleanMethod = 'sweep' | 'mop' | 'sweep_then_mop';
 
 export interface DirtConfig {
-  /** Display name */
   name: string;
-  /** Path to texture image */
   texture: string;
-  /** Clean method */
   method: CleanMethod;
-  /** Number of actions required */
   requiredActions: number;
-  /** Day when this first appears (0 = Day 1) */
   minDay: number;
+  sizeRange: [number, number];
+  tint: number;
+  opacity: number;
 }
 
-// Dirt configs based on images in public/image
 export const DIRT_CONFIGS: DirtConfig[] = [
-  { name: 'Dust',          texture: '/image/dirt.png',       method: 'sweep',          requiredActions: 1, minDay: 0 },
-  { name: 'Thick Dust',    texture: '/image/dirt2.png',      method: 'sweep',          requiredActions: 2, minDay: 0 },
-  { name: 'Coffee Spill',  texture: '/image/coffeSpill.png', method: 'mop',            requiredActions: 2, minDay: 1 },
-  { name: 'Blood Stain',   texture: '/image/blood.png',      method: 'mop',            requiredActions: 3, minDay: 2 },
-  { name: 'Stubborn Dirt', texture: '/image/dirty1.jpg',     method: 'sweep_then_mop', requiredActions: 2, minDay: 3 },
-  { name: 'Heavy Grime',   texture: '/image/dirty.png',      method: 'sweep_then_mop', requiredActions: 3, minDay: 4 },
+  {
+    name: 'Dust',
+    texture: '/image/dirt.png',
+    method: 'sweep',
+    requiredActions: 1,
+    minDay: 1,
+    sizeRange: [0.70, 0.95],
+    tint: 0xd8d2c2,
+    opacity: 0.72,
+  },
+  {
+    name: 'Thick Dust',
+    texture: '/image/dirt2.png',
+    method: 'sweep',
+    requiredActions: 2,
+    minDay: 1,
+    sizeRange: [0.86, 1.22],
+    tint: 0xb9b0a0,
+    opacity: 0.82,
+  },
+  {
+    name: 'Coffee Spill',
+    texture: '/image/coffeSpill.png',
+    method: 'mop',
+    requiredActions: 2,
+    minDay: 2,
+    sizeRange: [0.88, 1.34],
+    tint: 0x9b6a42,
+    opacity: 0.86,
+  },
+  {
+    name: 'Sauce Stain',
+    texture: '/image/blood.png',
+    method: 'mop',
+    requiredActions: 3,
+    minDay: 3,
+    sizeRange: [0.80, 1.18],
+    tint: 0xa74735,
+    opacity: 0.82,
+  },
+  {
+    name: 'Stubborn Dirt',
+    texture: '/image/dirty1.jpg',
+    method: 'sweep_then_mop',
+    requiredActions: 2,
+    minDay: 4,
+    sizeRange: [0.95, 1.44],
+    tint: 0x71624f,
+    opacity: 0.88,
+  },
+  {
+    name: 'Heavy Grime',
+    texture: '/image/dirty1.jpg',
+    method: 'sweep_then_mop',
+    requiredActions: 3,
+    minDay: 5,
+    sizeRange: [1.12, 1.62],
+    tint: 0x4e463b,
+    opacity: 0.92,
+  },
 ];
 
 export interface DirtSpot {
-  /** Cấu hình vết bẩn - Dirt configuration */
   config: DirtConfig;
-  /** Mesh plane hiển thị trên sàn - Visual mesh on the floor */
   mesh: THREE.Mesh;
-  /** Số lần dọn còn lại - Remaining action count */
   remainingActions: number;
-  /** Trạng thái hiện tại (sweep_then_mop: cần quét trước rồi lau)
-   * 'needs_sweep' | 'needs_mop' | 'done' */
   currentStep: 'needs_sweep' | 'needs_mop' | 'done';
-  /** Đang được dọn bởi robot - Currently being cleaned */
   cleaning: boolean;
 }
 
@@ -47,188 +91,68 @@ export class DirtSpawner {
   private spots: DirtSpot[] = [];
   public group = new THREE.Group();
 
-  /**
-   * Sinh vết bẩn cho ngày chỉ định - Spawn dirt spots for the given day
-   * @param day Ngày hiện tại (bắt đầu từ 1) - Current day (starting from 1)
-   * @param floorY Độ cao mặt sàn - Floor Y level
-   * @param collidableMeshes Danh sách mesh có thể va chạm (để kiểm tra vị trí hợp lệ) - Collidable meshes for validation
-   */
   public async spawnForDay(
     day: number,
     floorY: number,
-    collidableMeshes: THREE.Object3D[],
-    dirtWeights?: Record<string, number>
+    floorMeshes: THREE.Object3D[],
+    dirtWeights?: Record<string, number>,
+    spawnBounds?: THREE.Box3
   ): Promise<DirtSpot[]> {
-    console.log(`🧹 Spawning dirt for Day ${day}...`);
-
-    // Xóa vết bẩn cũ - Clear old spots
     this.clearAll();
 
-    // Số vết bẩn tăng theo ngày - Dirt count increases per day
-    const baseCount = 3;
-    const count = baseCount + Math.floor(day * 1.5);
-
-    console.log(`   Target: ${count} dirt spots`);
-
-    // Lọc các loại vết bẩn hợp lệ cho ngày hiện tại - Filter configs available for this day
-    const availableConfigs = DIRT_CONFIGS.filter(c => c.minDay < day);
-    if (availableConfigs.length === 0) {
-      console.warn('⚠️ No dirt configs available for this day');
-      return [];
-    }
-
-    console.log(`   Available dirt types: ${availableConfigs.map(c => c.name).join(', ')}`);
+    const targetCount = getLevelTuning(day).dirtSpots;
+    const availableConfigs = DIRT_CONFIGS.filter((config) => config.minDay <= day);
+    if (availableConfigs.length === 0) return [];
 
     const raycaster = new THREE.Raycaster();
     const downDir = new THREE.Vector3(0, -1, 0);
     const upDir = new THREE.Vector3(0, 1, 0);
+    const area = this.getSpawnArea(spawnBounds);
 
-    let attempts = 0;
-    const maxAttempts = count * 10;
-    let validPositions = 0;
-    let invalidPositions = 0;
+    for (let attempts = 0; this.spots.length < targetCount && attempts < targetCount * 18; attempts += 1) {
+      const x = THREE.MathUtils.lerp(area.minX, area.maxX, Math.random());
+      const z = THREE.MathUtils.lerp(area.minZ, area.maxZ, Math.random());
 
-    while (this.spots.length < count && attempts < maxAttempts) {
-      attempts++;
+      if (!this.isValidFloorPosition(x, z, floorY, floorMeshes, raycaster, downDir, upDir)) continue;
 
-      // Random vị trí trong phạm vi phòng - Random position within room bounds
-      const x = (Math.random() - 0.5) * 6;
-      const z = (Math.random() - 0.5) * 6;
+      const config = this.pickConfig(availableConfigs, dirtWeights);
+      const size = DIRT_PLANE_SIZE * THREE.MathUtils.lerp(config.sizeRange[0], config.sizeRange[1], Math.random());
 
-      // Kiểm tra vị trí hợp lệ (trên sàn, không trên tường/đồ vật) - Validate position
-      if (!this.isValidFloorPosition(x, z, floorY, collidableMeshes, raycaster, downDir, upDir)) {
-        invalidPositions++;
-        continue;
-      }
-
-      validPositions++;
-
-      // Kiểm tra không trùng vị trí vết bẩn khác - Check overlap with existing spots
-      const tooClose = this.spots.some(s => {
-        const dx = s.mesh.position.x - x;
-        const dz = s.mesh.position.z - z;
-        return Math.sqrt(dx * dx + dz * dz) < DIRT_PLANE_SIZE * 1.5;
+      const tooClose = this.spots.some((spot) => {
+        const dx = spot.mesh.position.x - x;
+        const dz = spot.mesh.position.z - z;
+        return Math.hypot(dx, dz) < Math.max(size, DIRT_PLANE_SIZE) * 1.35;
       });
       if (tooClose) continue;
 
-      // Pick dirt config (optionally weighted by story/day)
-      const config = this.pickConfig(availableConfigs, dirtWeights);
-
-      // Tạo mesh plane - Create visual mesh
-      const texture = await this.loadTexture(config.texture);
-      const geometry = new THREE.PlaneGeometry(DIRT_PLANE_SIZE, DIRT_PLANE_SIZE);
-      const material = new THREE.MeshStandardMaterial({
-        map: texture,
-        transparent: true,
-        alphaTest: 0.1,
-        roughness: 0.95,
-        metalness: 0,
-        depthWrite: false,
-        side: THREE.DoubleSide, // Render both sides for better visibility
-      });
-
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(x, floorY + 0.005, z); // Nổi lên chút xíu so với sàn
-      mesh.rotation.z = Math.random() * Math.PI * 2; // Xoay ngẫu nhiên cho tự nhiên
-      mesh.receiveShadow = true;
-      mesh.castShadow = true; // Cast shadow for better depth perception
-
-      // Xác định trạng thái ban đầu - Determine initial step
-      let currentStep: DirtSpot['currentStep'] = 'needs_sweep';
-      if (config.method === 'mop') {
-        currentStep = 'needs_mop';
-      }
-
-      const spot: DirtSpot = {
-        config,
-        mesh,
-        remainingActions: config.requiredActions,
-        currentStep,
-        cleaning: false,
-      };
-
-      this.spots.push(spot);
-      this.group.add(mesh);
+      await this.createSpot(config, x, z, size, floorY);
     }
 
-    console.log(`✅ Spawned ${this.spots.length}/${count} dirt spots (${attempts} attempts, ${validPositions} valid, ${invalidPositions} invalid)`);
+    if (this.spots.length < Math.min(targetCount, 4)) {
+      const fallbackPositions = this.getFallbackPositions(area);
+      for (const position of fallbackPositions) {
+        if (this.spots.length >= Math.min(targetCount, 6)) break;
+
+        const tooClose = this.spots.some((spot) => Math.hypot(spot.mesh.position.x - position.x, spot.mesh.position.z - position.z) < DIRT_PLANE_SIZE * 1.4);
+        if (tooClose) continue;
+
+        const config = this.pickConfig(availableConfigs, dirtWeights);
+        const size = DIRT_PLANE_SIZE * THREE.MathUtils.lerp(config.sizeRange[0], config.sizeRange[1], Math.random());
+        await this.createSpot(config, position.x, position.z, size, floorY);
+      }
+    }
 
     return this.spots;
   }
 
-  private pickConfig(configs: DirtConfig[], weights?: Record<string, number>): DirtConfig {
-    if (!weights) {
-      return configs[Math.floor(Math.random() * configs.length)];
-    }
-
-    // Build weighted list based on DirtConfig.name
-    let total = 0;
-    for (const c of configs) {
-      const w = weights[c.name] ?? 1;
-      if (w > 0) total += w;
-    }
-    if (total <= 0) {
-      return configs[Math.floor(Math.random() * configs.length)];
-    }
-
-    let r = Math.random() * total;
-    for (const c of configs) {
-      const w = weights[c.name] ?? 1;
-      if (w <= 0) continue;
-      r -= w;
-      if (r <= 0) return c;
-    }
-    return configs[configs.length - 1];
-  }
-
-  /**
-   * Kiểm tra vị trí có nằm trên sàn hợp lệ hay không
-   * Validate that position is on the floor (not on walls, under furniture, etc.)
-   */
-  private isValidFloorPosition(
-    x: number, z: number, floorY: number,
-    collidableMeshes: THREE.Object3D[],
-    raycaster: THREE.Raycaster,
-    downDir: THREE.Vector3,
-    upDir: THREE.Vector3
-  ): boolean {
-    // Bắn tia từ trên xuống để kiểm tra có sàn tại vị trí này - Raycast down to check for floor
-    const rayOrigin = new THREE.Vector3(x, floorY + 2, z);
-    raycaster.set(rayOrigin, downDir);
-    const hits = raycaster.intersectObjects(collidableMeshes, true);
-
-    if (hits.length === 0) return false;
-
-    // Tìm điểm chạm gần mặt sàn nhất (bỏ qua trần nhà nếu tia bắn xuyên qua)
-    const validHit = hits.find(h => Math.abs(h.point.y - floorY) <= 0.25);
-    if (!validHit) return false;
-
-    // Bắn tia từ dưới lên để kiểm tra không bị đồ vật đè - Raycast up to check nothing above
-    const rayOriginUp = new THREE.Vector3(x, floorY + 0.05, z);
-    raycaster.set(rayOriginUp, upDir);
-    const hitsUp = raycaster.intersectObjects(collidableMeshes, true);
-
-    // Nếu có vật thể ở rất gần phía trên (< 0.3m), vị trí không hợp lệ (dưới gầm thấp)
-    if (hitsUp.length > 0 && hitsUp[0].distance < 0.3) {
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * Tìm vết bẩn gần nhất trong tầm tương tác - Find nearest dirt spot within interaction range
-   */
   public findNearestSpot(robotPos: THREE.Vector3): DirtSpot | null {
     let nearest: DirtSpot | null = null;
     let minDist = DIRT_INTERACT_DIST;
 
     for (const spot of this.spots) {
       if (spot.currentStep === 'done') continue;
-      const dx = spot.mesh.position.x - robotPos.x;
-      const dz = spot.mesh.position.z - robotPos.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      const dist = Math.hypot(spot.mesh.position.x - robotPos.x, spot.mesh.position.z - robotPos.z);
       if (dist < minDist) {
         minDist = dist;
         nearest = spot;
@@ -238,24 +162,14 @@ export class DirtSpawner {
     return nearest;
   }
 
-  /**
-   * Thực hiện hành động quét lên vết bẩn - Apply sweep action to a dirt spot
-   * @returns Trạng thái kết quả - Result status
-   */
   public applySweep(spot: DirtSpot): 'wrong_tool' | 'progress' | 'cleaned' {
-    if (spot.currentStep !== 'needs_sweep') {
-      return 'wrong_tool';
-    }
+    if (spot.currentStep !== 'needs_sweep') return 'wrong_tool';
 
-    spot.remainingActions--;
+    spot.remainingActions -= 1;
 
     if (spot.config.method === 'sweep_then_mop' && spot.remainingActions > 0) {
-      // Đã quét xong, chuyển sang lau - Swept, now needs mopping
       spot.currentStep = 'needs_mop';
-      // Thay đổi opacity để thể hiện tiến trình
-      const mat = spot.mesh.material as THREE.MeshStandardMaterial;
-      mat.opacity = 0.6;
-      mat.color.setHex(0x88ccff); // Blue tint to show it's been swept
+      this.updateSpotVisual(spot, 0x8fb8c5, 0.62);
       return 'progress';
     }
 
@@ -265,23 +179,14 @@ export class DirtSpawner {
       return 'cleaned';
     }
 
-    // Giảm opacity để thể hiện tiến trình - Reduce opacity to show progress
-    const progress = spot.remainingActions / spot.config.requiredActions;
-    const mat = spot.mesh.material as THREE.MeshStandardMaterial;
-    mat.opacity = 0.3 + progress * 0.7;
+    this.updateSpotVisual(spot);
     return 'progress';
   }
 
-  /**
-   * Thực hiện hành động lau lên vết bẩn - Apply mop action to a dirt spot
-   * @returns Trạng thái kết quả - Result status
-   */
   public applyMop(spot: DirtSpot): 'wrong_tool' | 'progress' | 'cleaned' {
-    if (spot.currentStep !== 'needs_mop') {
-      return 'wrong_tool';
-    }
+    if (spot.currentStep !== 'needs_mop') return 'wrong_tool';
 
-    spot.remainingActions--;
+    spot.remainingActions -= 1;
 
     if (spot.remainingActions <= 0) {
       spot.currentStep = 'done';
@@ -289,70 +194,174 @@ export class DirtSpawner {
       return 'cleaned';
     }
 
-    // Giảm opacity để thể hiện tiến trình - Reduce opacity to show progress
-    const progress = spot.remainingActions / spot.config.requiredActions;
-    const mat = spot.mesh.material as THREE.MeshStandardMaterial;
-    mat.opacity = 0.3 + progress * 0.7;
-    // Add green tint to show mopping progress
-    mat.color.setHex(0x88ffaa);
+    this.updateSpotVisual(spot, 0x93c9a2);
     return 'progress';
   }
 
-  /** Xóa 1 vết bẩn khỏi scene - Remove a single spot */
-  private removeSpot(spot: DirtSpot) {
-    const mesh = spot.mesh;
-    const mat = mesh.material as THREE.MeshStandardMaterial;
-    mat.dispose();
-    mesh.geometry.dispose();
-    this.group.remove(mesh);
-  }
-
-  /** Xóa tất cả vết bẩn - Clear all spots */
   public clearAll() {
     for (const spot of this.spots) {
-      const mat = spot.mesh.material as THREE.MeshStandardMaterial;
-      mat.dispose();
-      spot.mesh.geometry.dispose();
-      this.group.remove(spot.mesh);
+      this.disposeSpot(spot);
     }
     this.spots = [];
   }
 
-  /** Kiểm tra đã dọn hết chưa - Check if all spots are cleaned */
   public isAllCleaned(): boolean {
-    return this.spots.every(s => s.currentStep === 'done');
+    return this.spots.every((spot) => spot.currentStep === 'done');
   }
 
-  /** Đếm vết bẩn còn lại - Count remaining spots */
   public getRemainingCount(): number {
-    return this.spots.filter(s => s.currentStep !== 'done').length;
+    return this.spots.filter((spot) => spot.currentStep !== 'done').length;
   }
 
-  /** Tổng số vết bẩn đã sinh - Total spots spawned */
   public getTotalCount(): number {
     return this.spots.length;
   }
 
-  /** Debug: Get detailed information about all spots */
-  public getDebugInfo(): Array<{name: string, position: {x: number, z: number}, remaining: number, step: string}> {
-    return this.spots.map(spot => ({
+  public getDebugInfo(): Array<{ name: string; position: { x: number; z: number }; remaining: number; step: string }> {
+    return this.spots.map((spot) => ({
       name: spot.config.name,
       position: { x: spot.mesh.position.x, z: spot.mesh.position.z },
       remaining: spot.remainingActions,
-      step: spot.currentStep
+      step: spot.currentStep,
     }));
   }
 
-  /** Force refresh all dirt spots (useful for debugging) */
   public forceRefresh() {
-    console.log('🔄 Force refreshing all dirt spots...');
-    this.spots.forEach(spot => {
+    this.spots.forEach((spot) => {
       const material = spot.mesh.material as THREE.MeshStandardMaterial;
       material.needsUpdate = true;
     });
   }
 
-  /** Load texture với cache và error handling - Load texture with caching and error handling */
+  private async createSpot(config: DirtConfig, x: number, z: number, size: number, floorY: number) {
+    const texture = await this.loadTexture(config.texture);
+    const geometry = new THREE.PlaneGeometry(size, size);
+    const material = new THREE.MeshStandardMaterial({
+      map: texture,
+      color: config.tint,
+      transparent: true,
+      opacity: config.opacity,
+      alphaTest: 0.06,
+      roughness: 0.98,
+      metalness: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.rotation.z = Math.random() * Math.PI * 2;
+    mesh.position.set(x, floorY + 0.018 + Math.random() * 0.004, z);
+    mesh.receiveShadow = true;
+    mesh.userData.dirtName = config.name;
+    mesh.userData.cleanMethod = config.method;
+
+    this.spots.push({
+      config,
+      mesh,
+      remainingActions: config.requiredActions,
+      currentStep: config.method === 'mop' ? 'needs_mop' : 'needs_sweep',
+      cleaning: false,
+    });
+    this.group.add(mesh);
+  }
+
+  private getFallbackPositions(area: { minX: number; maxX: number; minZ: number; maxZ: number }) {
+    const insetX = Math.max(0.25, (area.maxX - area.minX) * 0.18);
+    const insetZ = Math.max(0.25, (area.maxZ - area.minZ) * 0.18);
+    const minX = area.minX + insetX;
+    const maxX = area.maxX - insetX;
+    const minZ = area.minZ + insetZ;
+    const maxZ = area.maxZ - insetZ;
+
+    return [
+      { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 },
+      { x: minX, z: minZ },
+      { x: maxX, z: minZ },
+      { x: minX, z: maxZ },
+      { x: maxX, z: maxZ },
+      { x: (minX + maxX) / 2, z: minZ },
+      { x: (minX + maxX) / 2, z: maxZ },
+    ];
+  }
+
+  private getSpawnArea(spawnBounds?: THREE.Box3) {
+    if (spawnBounds && !spawnBounds.isEmpty()) {
+      return {
+        minX: spawnBounds.min.x,
+        maxX: spawnBounds.max.x,
+        minZ: spawnBounds.min.z,
+        maxZ: spawnBounds.max.z,
+      };
+    }
+
+    return { minX: -3, maxX: 3, minZ: -3, maxZ: 3 };
+  }
+
+  private pickConfig(configs: DirtConfig[], weights?: Record<string, number>): DirtConfig {
+    if (!weights) return configs[Math.floor(Math.random() * configs.length)];
+
+    let total = 0;
+    for (const config of configs) {
+      const weight = weights[config.name] ?? 1;
+      if (weight > 0) total += weight;
+    }
+
+    if (total <= 0) return configs[Math.floor(Math.random() * configs.length)];
+
+    let cursor = Math.random() * total;
+    for (const config of configs) {
+      const weight = weights[config.name] ?? 1;
+      if (weight <= 0) continue;
+
+      cursor -= weight;
+      if (cursor <= 0) return config;
+    }
+
+    return configs[configs.length - 1];
+  }
+
+  private isValidFloorPosition(
+    x: number,
+    z: number,
+    floorY: number,
+    floorMeshes: THREE.Object3D[],
+    raycaster: THREE.Raycaster,
+    downDir: THREE.Vector3,
+    upDir: THREE.Vector3
+  ): boolean {
+    if (!floorMeshes.length) return true;
+
+    raycaster.set(new THREE.Vector3(x, floorY + 3, z), downDir);
+    const hits = raycaster.intersectObjects(floorMeshes, true);
+    const floorHit = hits.find((hit) => Math.abs(hit.point.y - floorY) <= 0.22);
+    if (!floorHit) return false;
+
+    raycaster.set(new THREE.Vector3(x, floorY + 0.05, z), upDir);
+    const hitsUp = raycaster.intersectObjects(floorMeshes, true);
+    return !(hitsUp.length > 0 && hitsUp[0].distance < 0.28);
+  }
+
+  private updateSpotVisual(spot: DirtSpot, tint?: number, forcedOpacity?: number) {
+    const material = spot.mesh.material as THREE.MeshStandardMaterial;
+    const progress = spot.remainingActions / spot.config.requiredActions;
+    material.opacity = forcedOpacity ?? THREE.MathUtils.clamp(0.28 + progress * 0.62, 0.34, spot.config.opacity);
+    if (tint) {
+      material.color.setHex(tint);
+    }
+  }
+
+  private removeSpot(spot: DirtSpot) {
+    this.disposeSpot(spot);
+  }
+
+  private disposeSpot(spot: DirtSpot) {
+    const material = spot.mesh.material as THREE.MeshStandardMaterial;
+    material.dispose();
+    spot.mesh.geometry.dispose();
+    this.group.remove(spot.mesh);
+  }
+
   private async loadTexture(path: string): Promise<THREE.Texture> {
     const cached = this.textureCache.get(path);
     if (cached) return cached;
@@ -360,62 +369,39 @@ export class DirtSpawner {
     return new Promise<THREE.Texture>((resolve) => {
       this.textureLoader.load(
         path,
-        (tex) => {
-          // Success: optimize texture settings
-          tex.colorSpace = THREE.SRGBColorSpace;
-          tex.wrapS = THREE.RepeatWrapping;
-          tex.wrapT = THREE.RepeatWrapping;
-          tex.minFilter = THREE.LinearMipmapLinearFilter;
-          tex.magFilter = THREE.LinearFilter;
-          tex.anisotropy = 4; // Better quality at angles
-
-          this.textureCache.set(path, tex);
-          console.log(`✅ Loaded texture: ${path}`);
-          resolve(tex);
+        (texture) => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.anisotropy = 4;
+          this.textureCache.set(path, texture);
+          resolve(texture);
         },
-        (progress) => {
-          // Optional: Log loading progress
-          if (progress.total > 0) {
-            const percent = (progress.loaded / progress.total) * 100;
-            console.log(`Loading ${path}: ${percent.toFixed(1)}%`);
-          }
-        },
-        (error) => {
-          // Error: Create fallback texture
-          console.warn(`⚠️ Failed to load texture: ${path}`, error);
-
-          // Create procedural fallback texture
-          const canvas = document.createElement('canvas');
-          canvas.width = 128;
-          canvas.height = 128;
-          const ctx = canvas.getContext('2d');
-
-          if (ctx) {
-            // Create a simple dirt-like pattern
-            const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-            gradient.addColorStop(0, 'rgba(139, 119, 101, 0.8)');
-            gradient.addColorStop(1, 'rgba(101, 85, 72, 0.6)');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, 128, 128);
-
-            // Add some noise
-            for (let i = 0; i < 100; i++) {
-              ctx.fillStyle = `rgba(${100 + Math.random() * 50}, ${80 + Math.random() * 40}, ${60 + Math.random() * 30}, ${0.3 + Math.random() * 0.4})`;
-              ctx.beginPath();
-              ctx.arc(Math.random() * 128, Math.random() * 128, 2 + Math.random() * 4, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          }
-
-          const fallbackTex = new THREE.CanvasTexture(canvas);
-          fallbackTex.colorSpace = THREE.SRGBColorSpace;
-          fallbackTex.wrapS = THREE.RepeatWrapping;
-          fallbackTex.wrapT = THREE.RepeatWrapping;
-
-          this.textureCache.set(path, fallbackTex);
-          resolve(fallbackTex);
+        undefined,
+        () => {
+          const fallback = this.createFallbackTexture();
+          this.textureCache.set(path, fallback);
+          resolve(fallback);
         }
       );
     });
+  }
+
+  private createFallbackTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = 96;
+
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const gradient = ctx.createRadialGradient(48, 48, 4, 48, 48, 48);
+      gradient.addColorStop(0, 'rgba(80, 62, 42, 0.9)');
+      gradient.addColorStop(0.7, 'rgba(80, 62, 42, 0.42)');
+      gradient.addColorStop(1, 'rgba(80, 62, 42, 0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 96, 96);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
   }
 }

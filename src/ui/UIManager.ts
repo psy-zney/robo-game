@@ -6,19 +6,23 @@ export class UIManager {
   private storageBar: HTMLElement | null;
   private statusElement: HTMLElement | null;
   private dayElement: HTMLElement | null;
+  private levelTitleElement: HTMLElement | null;
   private missionElement: HTMLElement | null;
   private actionElement: HTMLElement | null;
   private difficultyElement: HTMLElement | null;
+  private cameraSettingsElement: HTMLElement | null;
 
   // State tracking for efficient updates
   private lastBattery = 100;
   private lastStorage = 0;
   private lastDay = 1;
+  private lastLevelTitle = '';
   private lastCleaned = 0;
   private lastTotal = 0;
   private lastStatus = '';
   private lastMission = '';
   private lastDifficulty = 1.0;
+  private lastCameraSettings = '';
 
   constructor() {
     this.batteryElement = document.getElementById('battery');
@@ -28,9 +32,11 @@ export class UIManager {
     this.storageBar = document.getElementById('storage-bar');
     this.statusElement = document.getElementById('status');
     this.dayElement = document.getElementById('day-counter');
+    this.levelTitleElement = document.getElementById('level-title');
     this.missionElement = document.getElementById('mission');
     this.actionElement = document.getElementById('action');
     this.difficultyElement = document.getElementById('difficulty');
+    this.cameraSettingsElement = document.getElementById('camera-settings');
 
     this.setupMenuNavigation();
     this.setupAnimations();
@@ -105,7 +111,7 @@ export class UIManager {
 
   public update(
     battery: number, cleaned: number, total: number,
-    storage: number, capacity: number, status: string, day: number, mission?: string, difficulty?: number
+    storage: number, capacity: number, status: string, day: number, mission?: string, difficulty?: number, cameraSettings?: string, levelTitle?: string
   ) {
     // Only update DOM if values changed significantly for performance
     const batteryChanged = Math.abs(battery - this.lastBattery) > 0.5;
@@ -114,7 +120,9 @@ export class UIManager {
     const progressChanged = cleaned !== this.lastCleaned || total !== this.lastTotal;
     const statusChanged = status !== this.lastStatus;
     const missionChanged = (mission ?? '') !== this.lastMission;
+    const levelTitleChanged = (levelTitle ?? '') !== this.lastLevelTitle;
     const difficultyChanged = difficulty !== undefined && Math.abs(difficulty - this.lastDifficulty) > 0.01;
+    const cameraSettingsChanged = cameraSettings !== undefined && cameraSettings !== this.lastCameraSettings;
 
     if (batteryChanged) {
       this.updateBattery(battery);
@@ -147,9 +155,19 @@ export class UIManager {
       this.lastMission = mission ?? '';
     }
 
+    if (levelTitleChanged) {
+      this.updateLevelTitle(levelTitle);
+      this.lastLevelTitle = levelTitle ?? '';
+    }
+
     if (difficultyChanged && difficulty !== undefined) {
       this.updateDifficulty(difficulty);
       this.lastDifficulty = difficulty;
+    }
+
+    if (cameraSettingsChanged && cameraSettings !== undefined) {
+      this.updateCameraSettings(cameraSettings);
+      this.lastCameraSettings = cameraSettings;
     }
   }
 
@@ -179,7 +197,7 @@ export class UIManager {
         this.storageBar.className = 'stat-fill bg-danger';
         this.storageElement.style.color = 'var(--color-danger)';
       } else {
-        this.storageBar.className = 'stat-fill bg-purple';
+        this.storageBar.className = 'stat-fill storage-fill';
         this.storageElement.style.color = '';
       }
     }
@@ -196,7 +214,7 @@ export class UIManager {
 
   private updateProgress(cleaned: number, total: number) {
     if (this.progressElement) {
-      this.progressElement.textContent = `${cleaned} / ${total}`;
+      this.progressElement.textContent = `${Math.max(0, total - cleaned)} / ${total}`;
     }
   }
 
@@ -223,6 +241,12 @@ export class UIManager {
     }
   }
 
+  private updateLevelTitle(levelTitle: string | undefined) {
+    if (this.levelTitleElement) {
+      this.levelTitleElement.textContent = (levelTitle ?? 'Calibration').toUpperCase();
+    }
+  }
+
   private updateDifficulty(difficulty: number) {
     if (this.difficultyElement) {
       this.difficultyElement.textContent = `${difficulty.toFixed(1)}x`;
@@ -237,6 +261,12 @@ export class UIManager {
       } else {
         this.difficultyElement.style.color = 'var(--danger)';
       }
+    }
+  }
+
+  private updateCameraSettings(settings: string) {
+    if (this.cameraSettingsElement) {
+      this.cameraSettingsElement.textContent = settings;
     }
   }
 

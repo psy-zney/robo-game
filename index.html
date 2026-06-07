@@ -2,20 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>robo-game</title>
+    <title>RoboClean</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <!-- Start / Hub Screen -->
     <div id="start-screen" class="screen active">
       <div class="hub">
         <div class="hub-brand">
           <img src="/image/logo.png" alt="RoboClean" class="brand-mark" />
           <div class="brand-type">
             <div class="brand-title">ROBOCLEAN</div>
-            <div class="brand-tagline">Autonomous Protocol, Day-by-Day</div>
+            <div class="brand-tagline">Autonomous Protocol, Day by Day</div>
           </div>
         </div>
 
@@ -25,6 +23,7 @@
 
           <div class="divider"></div>
 
+          <button class="btn music-toggle" type="button">MUSIC ON</button>
           <button id="new-run-btn" class="btn">NEW RUN</button>
 
           <div class="replay">
@@ -38,12 +37,12 @@
 
         <div class="hub-foot">
           <div class="key-hint"><span class="k">WASD</span> or <span class="k">ARROWS</span> move, <span class="k">E</span> sweep, <span class="k">R</span> mop</div>
+          <div class="key-hint muted"><span class="k">PgUp/Dn</span> camera height, <span class="k">[</span><span class="k">]</span> FOV, <span class="k">Home</span> reset</div>
           <div class="key-hint muted">Click to lock mouse in game, press ESC to pause.</div>
         </div>
       </div>
     </div>
 
-    <!-- Loading Screen -->
     <div id="loading-screen" class="screen">
       <div class="load">
         <div class="load-top">
@@ -58,9 +57,18 @@
       </div>
     </div>
 
-    <!-- In-Game HUD -->
     <div id="game-ui" class="screen">
-      <div class="hud-panel top-left rpg-panel">
+      <div class="hud-panel top-left mission-panel">
+        <div class="mission-kicker">ACTIVE LEVEL</div>
+        <div class="mission-head">
+          <span id="day-counter" class="value day-badge">DAY 1</span>
+          <span id="difficulty" class="value difficulty-badge">1.0x</span>
+        </div>
+        <div id="level-title" class="level-title">BOOT-UP</div>
+        <div id="mission" class="mission-text">RUN DIAGNOSTICS</div>
+      </div>
+
+      <div class="hud-panel top-right telemetry-panel">
         <div class="rpg-bar-container energy-bar-container">
           <div class="rpg-bar-label">ENERGY</div>
           <div class="rpg-bar-bg">
@@ -68,53 +76,37 @@
             <div id="battery" class="rpg-bar-text">100%</div>
           </div>
         </div>
-        <div class="hud-item storage-container">
-          <span class="hud-icon">📦</span>
-          <div class="hud-info">
+
+        <div class="telemetry-grid">
+          <div class="telemetry-cell">
+            <span class="label">DIRT LEFT</span>
+            <span id="progress" class="value text-accent">0 / 0</span>
+          </div>
+          <div class="telemetry-cell">
             <span class="label">STORAGE</span>
             <span id="storage" class="value">0 / 12</span>
-            <div class="stat-bar"><div id="storage-bar" class="stat-fill bg-purple" style="width: 0%"></div></div>
+            <div class="stat-bar"><div id="storage-bar" class="stat-fill storage-fill" style="width: 0%"></div></div>
+          </div>
+          <div class="telemetry-cell wide">
+            <span class="label">STATUS</span>
+            <span id="status" class="value status-text">READY</span>
           </div>
         </div>
       </div>
-      
-      <div class="hud-panel top-right">
-        <div class="hud-item text-right">
-          <span class="hud-icon">📅</span>
-          <span id="day-counter" class="value day-badge">DAY 1</span>
-        </div>
 
-        <div class="hud-item text-right">
-          <span class="label">DIRT REMAINING</span>
-          <span id="progress" class="value text-accent">0 / 0</span>
-        </div>
-        <div class="hud-item text-right">
-          <span class="label">STATUS</span>
-          <span id="status" class="value status-text">READY</span>
-        </div>
-
-        <div class="hud-item text-right">
-          <span class="label">MISSION</span>
-          <span id="mission" class="value mission-text">RUN DIAGNOSTICS</span>
-        </div>
-
-        <!-- Difficulty indicator -->
-        <div class="hud-item text-right">
-          <span class="label">DIFFICULTY</span>
-          <span id="difficulty" class="value">1.0x</span>
-        </div>
+      <div class="hud-panel bottom-center action-panel">
+        <div id="action" class="action-prompt"><span>[ E ]</span> SWEEP <span>[ R ]</span> MOP</div>
       </div>
 
-      <div class="hud-panel bottom-center">
-        <div id="action" class="action-prompt"><span>[ E ]</span> SWEEP &nbsp;&nbsp; <span>[ R ]</span> MOP</div>
-      </div>
-
-      <div class="hud-panel bottom-right">
-         <button id="reset-btn" class="cyber-btn small">SYSTEM RESET</button>
+      <div class="hud-panel bottom-right system-panel">
+        <button id="reset-btn" class="cyber-btn small">SYSTEM RESET</button>
+        <div class="camera-info">
+          <div class="camera-label">CAMERA</div>
+          <div id="camera-settings" class="camera-settings">H: 12cm | FOV: 85deg</div>
+        </div>
       </div>
     </div>
 
-    <!-- Pause Screen -->
     <div id="pause-screen" class="screen">
       <div class="pause">
         <div class="pause-head">
@@ -124,6 +116,7 @@
 
         <div class="pause-actions">
           <button id="resume-btn" class="btn primary">RESUME</button>
+          <button class="btn music-toggle" type="button">MUSIC ON</button>
           <button id="restart-day-btn" class="btn">RESTART DAY</button>
           <button id="restart-run-btn" class="btn danger">RESTART RUN</button>
         </div>
@@ -132,17 +125,22 @@
           <div class="controls-title muted">CONTROLS</div>
           <div class="controls-grid">
             <div class="controls-item"><span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> <span class="muted">move</span></div>
-            <div class="controls-item"><span class="k">↑</span><span class="k">←</span><span class="k">↓</span><span class="k">→</span> <span class="muted">move</span></div>
+            <div class="controls-item"><span class="k">ARROWS</span> <span class="muted">move</span></div>
             <div class="controls-item"><span class="k">E</span> <span class="muted">sweep</span></div>
             <div class="controls-item"><span class="k">R</span> <span class="muted">mop</span></div>
             <div class="controls-item"><span class="k">ESC</span> <span class="muted">pause</span></div>
             <div class="controls-item"><span class="k">CLICK</span> <span class="muted">lock mouse</span></div>
           </div>
+          <div class="controls-title muted camera-controls-title">CAMERA</div>
+          <div class="controls-grid">
+            <div class="controls-item"><span class="k">PgUp</span><span class="k">PgDn</span> <span class="muted">height</span></div>
+            <div class="controls-item"><span class="k">[</span><span class="k">]</span> <span class="muted">FOV</span></div>
+            <div class="controls-item"><span class="k">Home</span> <span class="muted">reset view</span></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Game Over Screen -->
     <div id="game-over-screen" class="screen">
       <div class="game-over-content glass-panel">
         <h1 class="critical-text">SYSTEM FAILURE</h1>

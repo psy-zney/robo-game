@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CELL_SIZE, GRID_SIZE } from '../utils/constants';
+import { CELL_SIZE, getLevelTuning, GRID_SIZE } from '../utils/constants';
 
 interface DustParticle {
   mesh: THREE.Mesh;
@@ -12,154 +12,157 @@ interface DustParticle {
 export class DustSpawner {
   private dustGroup = new THREE.Group();
   private particles: DustParticle[] = [];
-
   private scene: THREE.Scene;
-  private particleGeometry: THREE.SphereGeometry;
-  private particleMaterial: THREE.MeshStandardMaterial;
+  private floorY = 0;
+  private spawnBounds?: THREE.Box3;
+  private particleGeometry = new THREE.SphereGeometry(0.018, 8, 8);
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.scene.add(this.dustGroup);
-
-    // Pre-create geometry and material for better performance
-    this.particleGeometry = new THREE.SphereGeometry(0.02, 8, 8);
-    this.particleMaterial = new THREE.MeshStandardMaterial({
-      color: 0xcccccc,
-      roughness: 0.8,
-      metalness: 0.1,
-    });
   }
 
-  public spawnForDay(dayNumber: number, floorY: number, color: number = 0xcccccc) {
-    console.log(`✨ Spawning dust particles for Day ${dayNumber}...`);
+  public spawnForDay(dayNumber: number, floorY: number, color: number = 0xcccccc, bounds?: THREE.Box3) {
+    this.clearAll();
 
-    // Clear old dust
-    for (const p of this.particles) {
-      this.dustGroup.remove(p.mesh);
-      p.mesh.geometry.dispose();
-    }
-    this.particles = [];
+    this.floorY = floorY;
+    this.spawnBounds = bounds?.clone();
 
-    // Increase dust count with day
-    const numDust = 20 + dayNumber * 5;
-    const halfSize = (GRID_SIZE * CELL_SIZE) / 2 - 1.0;
+    const numDust = getLevelTuning(dayNumber).dustParticles;
+    for (let i = 0; i < numDust; i += 1) {
+      const material = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.9,
+        metalness: 0,
+        transparent: true,
+        opacity: 0.78,
+      });
+      const mesh = new THREE.Mesh(this.particleGeometry, material);
+      this.placeParticle(mesh);
 
-    // Update material color for the day
-    this.particleMaterial.color.setHex(color);
-
-    for (let i = 0; i < numDust; i++) {
-      const mesh = new THREE.Mesh(this.particleGeometry, this.particleMaterial.clone());
-
-      const x = (Math.random() - 0.5) * halfSize * 2;
-      const z = (Math.random() - 0.5) * halfSize * 2;
-      const y = floorY + 0.02 + Math.random() * 0.05; // Slight height variation
-
-      mesh.position.set(x, y, z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-
-      // Random slight scale variation
-      const scale = 0.8 + Math.random() * 0.4;
+      const scale = 0.72 + Math.random() * 0.58;
       mesh.scale.setScalar(scale);
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
 
       this.dustGroup.add(mesh);
-
       this.particles.push({
         mesh,
         active: true,
-        velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.01,
-          Math.random() * 0.02,
-          (Math.random() - 0.5) * 0.01
-        ),
+        velocity: this.createVelocity(),
         lifetime: 0,
-        maxLifetime: 10 + Math.random() * 20, // Random lifetime
+        maxLifetime: 10 + Math.random() * 20,
       });
     }
-
-    console.log(`✅ Spawned ${numDust} dust particles`);
   }
 
   public update(deltaTime: number) {
-    // Update particle physics and lifetime
-    for (const p of this.particles) {
-      if (!p.active) continue;
+    for (const particle of this.particles) {
+      if (!particle.active) continue;
 
-      // Apply gentle floating motion
-      p.mesh.position.addScaledVector(p.velocity, deltaTime);
+      particle.mesh.position.addScaledVector(particle.velocity, deltaTime);
+      particle.mesh.position.y += Math.sin(particle.lifetime * 2.2) * 0.0012 * deltaTime;
+      particle.lifetime += deltaTime;
 
-      // Add slight bobbing motion
-      p.mesh.position.y += Math.sin(p.lifetime * 2) * 0.001 * deltaTime;
-
-      // Update lifetime
-      p.lifetime += deltaTime;
-
-      // Respawn if lifetime exceeded
-      if (p.lifetime >= p.maxLifetime) {
-        this.respawnParticle(p);
+      if (!this.isInsideBounds(particle.mesh.position) || particle.lifetime >= particle.maxLifetime) {
+        this.respawnParticle(particle);
       }
     }
-  }
-
-  private respawnParticle(particle: DustParticle) {
-    const halfSize = (GRID_SIZE * CELL_SIZE) / 2 - 1.0;
-
-    particle.mesh.position.x = (Math.random() - 0.5) * halfSize * 2;
-    particle.mesh.position.z = (Math.random() - 0.5) * halfSize * 2;
-    particle.mesh.position.y = 0.02 + Math.random() * 0.05;
-
-    particle.velocity.set(
-      (Math.random() - 0.5) * 0.01,
-      Math.random() * 0.02,
-      (Math.random() - 0.5) * 0.01
-    );
-
-    particle.lifetime = 0;
-    particle.maxLifetime = 10 + Math.random() * 20;
-    particle.active = true;
-    particle.mesh.visible = true;
   }
 
   public checkCollision(playerPosition: THREE.Vector3, sweepActive: boolean): boolean {
     if (!sweepActive) return false;
 
     let cleaned = false;
-    const sweepRadius = 0.5; // Radius within which dust is sucked up
+    const sweepRadius = 0.52;
 
-    for (const p of this.particles) {
-      if (p.active) {
-        const dist = p.mesh.position.distanceTo(playerPosition);
-        if (dist < sweepRadius) {
-          p.active = false;
-          p.mesh.visible = false; // Hide it immediately
-          cleaned = true;
+    for (const particle of this.particles) {
+      if (!particle.active) continue;
 
-          // Respawn after a delay for continuous gameplay
-          setTimeout(() => {
-            this.respawnParticle(p);
-          }, 3000 + Math.random() * 2000);
-        }
+      const dist = particle.mesh.position.distanceTo(playerPosition);
+      if (dist < sweepRadius) {
+        particle.active = false;
+        particle.mesh.visible = false;
+        cleaned = true;
+
+        window.setTimeout(() => {
+          this.respawnParticle(particle);
+        }, 3000 + Math.random() * 2000);
       }
     }
+
     return cleaned;
   }
 
-  /** Get count of active particles */
   public getActiveCount(): number {
-    return this.particles.filter(p => p.active).length;
+    return this.particles.filter((particle) => particle.active).length;
   }
 
-  /** Get total particle count */
   public getTotalCount(): number {
     return this.particles.length;
   }
 
-  /** Clear all particles */
   public clearAll() {
-    for (const p of this.particles) {
-      this.dustGroup.remove(p.mesh);
-      p.mesh.geometry.dispose();
+    for (const particle of this.particles) {
+      const material = particle.mesh.material;
+      if (Array.isArray(material)) {
+        material.forEach((entry) => entry.dispose());
+      } else {
+        material.dispose();
+      }
+      this.dustGroup.remove(particle.mesh);
     }
     this.particles = [];
+  }
+
+  private respawnParticle(particle: DustParticle) {
+    this.placeParticle(particle.mesh);
+    particle.velocity.copy(this.createVelocity());
+    particle.lifetime = 0;
+    particle.maxLifetime = 10 + Math.random() * 20;
+    particle.active = true;
+    particle.mesh.visible = true;
+  }
+
+  private placeParticle(mesh: THREE.Mesh) {
+    const area = this.getSpawnArea();
+    const x = THREE.MathUtils.lerp(area.minX, area.maxX, Math.random());
+    const z = THREE.MathUtils.lerp(area.minZ, area.maxZ, Math.random());
+    const y = this.floorY + 0.025 + Math.random() * 0.08;
+    mesh.position.set(x, y, z);
+  }
+
+  private createVelocity() {
+    return new THREE.Vector3(
+      (Math.random() - 0.5) * 0.012,
+      Math.random() * 0.018,
+      (Math.random() - 0.5) * 0.012
+    );
+  }
+
+  private getSpawnArea() {
+    if (this.spawnBounds && !this.spawnBounds.isEmpty()) {
+      return {
+        minX: this.spawnBounds.min.x,
+        maxX: this.spawnBounds.max.x,
+        minZ: this.spawnBounds.min.z,
+        maxZ: this.spawnBounds.max.z,
+      };
+    }
+
+    const halfSize = (GRID_SIZE * CELL_SIZE) / 2 - 1.0;
+    return { minX: -halfSize, maxX: halfSize, minZ: -halfSize, maxZ: halfSize };
+  }
+
+  private isInsideBounds(position: THREE.Vector3) {
+    const area = this.getSpawnArea();
+    return (
+      position.x >= area.minX &&
+      position.x <= area.maxX &&
+      position.z >= area.minZ &&
+      position.z <= area.maxZ &&
+      position.y >= this.floorY &&
+      position.y <= this.floorY + 0.28
+    );
   }
 }

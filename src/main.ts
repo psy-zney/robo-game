@@ -1,7 +1,5 @@
 
-import { Engine } from './core/Engine';
-import { assetManager } from './core/AssetManager';
-import { obstacleModels } from './utils/modelList';
+import type { Engine } from './core/Engine';
 import { SaveManager } from './systems/SaveManager';
 
 const startScreen = document.getElementById('start-screen')!;
@@ -14,8 +12,10 @@ const replaySelect = document.getElementById('replay-day') as HTMLSelectElement 
 const replayBtn = document.getElementById('replay-btn') as HTMLButtonElement | null;
 const loadingText = document.getElementById('loading-text')!;
 let engine: Engine | null = null;
+let musicEnabled = true;
 
 hydrateHub();
+bindMusicToggles();
 
 function hydrateHub() {
   const save = SaveManager.load();
@@ -74,6 +74,16 @@ function startGame(options: { startDay: number; startBattery: number }) {
 
 async function loadGameAssets(options: { startDay: number; startBattery: number }) {
   try {
+    const [
+      { Engine },
+      { assetManager },
+      { obstacleModels }
+    ] = await Promise.all([
+      import('./core/Engine'),
+      import('./core/AssetManager'),
+      import('./utils/modelList')
+    ]);
+
     const promises = [
       assetManager.loadModel('home', '/models/home.glb'),
       assetManager.loadModel('robot', '/models/Robot.glb'),
@@ -94,21 +104,48 @@ async function loadGameAssets(options: { startDay: number; startBattery: number 
     if (!robotModel) console.error('Failed to load robot model');
     const huskyModel = assetManager.getModel('husky');
     if (!huskyModel) console.error('Failed to load husky model');
+
+    loadingScreen.classList.remove('active');
+    gameUI.classList.add('active');
+
+    engine = new Engine({ startDay: options.startDay, startBattery: options.startBattery });
+    if (!musicEnabled) {
+      engine.stopMusic();
+    }
+    syncMusicButtons();
+    bindInGameButtons();
   } catch (error) {
     console.error('Failed to load assets:', error);
     loadingText.innerText = 'ERROR: INITIALIZATION FAILED';
     loadingText.style.color = 'var(--color-danger)';
     return; // Stop execution if assets fail
   }
+}
 
-  // Transition to game UI
-  loadingScreen.classList.remove('active');
-  gameUI.classList.add('active');
+function bindMusicToggles() {
+  document.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    const button = target?.closest('.music-toggle');
+    if (!button) return;
 
-  // Start the game engine
-  engine = new Engine({ startDay: options.startDay, startBattery: options.startBattery });
+    musicEnabled = !musicEnabled;
+    if (musicEnabled) {
+      engine?.startMusic();
+    } else {
+      engine?.stopMusic();
+    }
+    syncMusicButtons();
+  });
+  syncMusicButtons();
+}
 
-  // Pause screen buttons
+function syncMusicButtons() {
+  document.querySelectorAll('.music-toggle').forEach((button) => {
+    button.textContent = musicEnabled ? 'MUSIC ON' : 'MUSIC OFF';
+  });
+}
+
+function bindInGameButtons() {
   const resumeBtn = document.getElementById('resume-btn');
   resumeBtn?.addEventListener('click', () => document.body.requestPointerLock());
   const restartDayBtn = document.getElementById('restart-day-btn');

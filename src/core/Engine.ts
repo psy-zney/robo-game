@@ -1,36 +1,42 @@
 import * as THREE from 'three';
-import { InputManager } from './InputManager';
 import { AudioManager } from './AudioManager';
-import { Robot } from '../entities/Robot';
-import { GameState } from '../systems/GameState';
-import { UIManager } from '../ui/UIManager';
 import { assetManager } from './AssetManager';
+import { InputManager } from './InputManager';
 import { Husky } from '../entities/Husky';
-import { ObstacleSpawner } from '../systems/ObstacleSpawner';
+import { Rat } from '../entities/Rat';
+import { Robot } from '../entities/Robot';
 import { DirtSpawner } from '../systems/DirtSpawner';
 import { DustSpawner } from '../systems/DustSpawner';
-import { getDayStory, getDifficultyMultiplier, hasSpecialEvent } from '../systems/StorySystem';
-import {
-  MOVE_SPEED, SWEEP_SPEED, MOP_SPEED, HOME_SCALE,
-  CHARGE_RATE, CHARGE_RADIUS,
-  BATTERY_DRAIN_MOVE, BATTERY_DRAIN_SWEEP, BATTERY_DRAIN_MOP,
-  HUSKY_BARK_CHANCE, HUSKY_RANDOM_BITE_BASE, MAX_BATTERY
-} from '../utils/constants';
-import { Rat } from '../entities/Rat';
+import { GameState } from '../systems/GameState';
+import { ObstacleSpawner } from '../systems/ObstacleSpawner';
 import { SaveManager } from '../systems/SaveManager';
+import { getDayStory, getDifficultyMultiplier, hasSpecialEvent } from '../systems/StorySystem';
+import { UIManager } from '../ui/UIManager';
+import {
+  BATTERY_DRAIN_MOP,
+  BATTERY_DRAIN_MOVE,
+  BATTERY_DRAIN_SWEEP,
+  CHARGE_RADIUS,
+  CHARGE_RATE,
+  HOME_SCALE,
+  HUSKY_BARK_CHANCE,
+  HUSKY_RANDOM_BITE_BASE,
+  MAX_BATTERY,
+  MOP_SPEED,
+  MOVE_SPEED,
+  SWEEP_SPEED,
+  WORLD_MARGIN,
+} from '../utils/constants';
 
-// Fixed robot spawn / charge station position
-// Y values will be set dynamically after house alignment — use floorY at runtime
-const ROBOT_SPAWN = { x: 4.0, z: -0.8 };
+const ROBOT_SPAWN_HINT = { x: 4.0, z: -0.8 };
 const HUSKY_SPAWN = { x: 0.337, z: -1.868 };
-const CHARGE_STATION = { x: 4.0, z: -0.8 }; // Matches createChargeStation() position
+const RAT_SPAWN = { x: 2.0, z: -1.5 };
 
 export class Engine {
   private scene = new THREE.Scene();
   private renderer = new THREE.WebGLRenderer({ antialias: true });
   private camera: THREE.PerspectiveCamera;
 
-  // Core systems
   private input = new InputManager();
   private robot = new Robot();
   private husky = new Husky();
@@ -40,46 +46,51 @@ export class Engine {
   private audioManager = new AudioManager();
   private obstacleSpawner = new ObstacleSpawner();
   private dirtSpawner = new DirtSpawner();
-  private dustSpawner!: DustSpawner;
+  private dustSpawner: DustSpawner;
 
-  // Floor Y level
   private floorY = 0;
-
-  // Game state variables
   private previousTime = performance.now();
   private isGameOver = false;
+  private isAdvancingDay = false;
   private bumpTimer = 0;
   private bumpDir = new THREE.Vector3();
   private cameraShakeTimer = 0;
   private day = 1;
   private dayIntroTimer = 0;
   private dayMission = '';
+  private wallHitCooldown = 0;
 
-  // Charge station visual
   private chargeStationMesh!: THREE.Mesh;
   private isCharging = false;
   private chargeSoundTimer = 0;
 
-  // Sweep/Mop cooldown
   private actionCooldown = 0;
-  private readonly ACTION_INTERVAL = 0.4; // 0.4s between actions
+  private readonly ACTION_INTERVAL = 0.34;
 
-  // Husky random bite timer
   private huskyRandomTimer = 0;
-  private readonly HUSKY_RANDOM_CHECK_INTERVAL = 5; // Check every 5s
+  private readonly HUSKY_RANDOM_CHECK_INTERVAL = 5;
 
-  // Memory optimization (Zero allocation)
+  private cameraUpdateTimer = 0;
+  private readonly CAMERA_UPDATE_INTERVAL = 0.5;
+
   private currentPosition = new THREE.Vector3();
-  private currentBox = new THREE.Box3();
-  private targetBox = new THREE.Box3();
   private raycaster = new THREE.Raycaster();
   private rayDir = new THREE.Vector3();
+  private robotSpawn = new THREE.Vector3(ROBOT_SPAWN_HINT.x, 0, ROBOT_SPAWN_HINT.z);
+  private huskySpawn = new THREE.Vector3(HUSKY_SPAWN.x, 0, HUSKY_SPAWN.z);
+  private chargeStationPosition = new THREE.Vector3(ROBOT_SPAWN_HINT.x, 0, ROBOT_SPAWN_HINT.z);
 
   private collidableMeshes: THREE.Object3D[] = [];
+  private floorMeshes: THREE.Object3D[] = [];
+  private obstacleMeshes: THREE.Object3D[] = [];
+  private playableBounds = new THREE.Box3(
+    new THREE.Vector3(-3.5, 0, -3.5),
+    new THREE.Vector3(3.5, 2, 3.5)
+  );
   public houseBounds = new THREE.Box3();
 
   constructor(options?: { startDay?: number; startBattery?: number }) {
-    this.scene.background = new THREE.Color(0x222222);
+    this.scene.background = new THREE.Color(0x20242b);
     this.camera = this.robot.camera;
     this.audioManager.initOnUserGesture();
 
@@ -88,13 +99,16 @@ export class Engine {
 
     this.setupRenderer();
     this.setupLights();
-    this.setupScene();
-
-    this.dustSpawner = new DustSpawner(this.scene);
 
     this.day = Math.max(1, Math.floor(options?.startDay ?? 1));
     this.gameState.init(100);
+    this.gameState.day = this.day;
     this.gameState.battery = Math.max(0, Math.min(MAX_BATTERY, options?.startBattery ?? MAX_BATTERY));
+
+    this.dustSpawner = new DustSpawner(this.scene);
+    this.audioManager.startMusic();
+    this.setupScene();
+
     this.updateHud('Ready');
     window.addEventListener('resize', this.onResize);
     this.animate();
@@ -103,16 +117,18 @@ export class Engine {
   private setupRenderer() {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.body.appendChild(this.renderer.domElement);
   }
 
   private setupLights() {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    const ambientLight = new THREE.AmbientLight(0xf2f6ff, 0.78);
     this.scene.add(ambientLight);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-    dirLight.position.set(5, 10, 5);
+
+    const dirLight = new THREE.DirectionalLight(0xf6f1e8, 0.72);
+    dirLight.position.set(5, 9, 5);
     dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(1024, 1024);
+    dirLight.shadow.mapSize.set(1536, 1536);
     dirLight.shadow.camera.near = 0.1;
     dirLight.shadow.camera.far = 50;
     this.scene.add(dirLight);
@@ -130,103 +146,300 @@ export class Engine {
           mesh.receiveShadow = true;
         }
       });
+
+      this.floorMeshes.push(homeModel);
       this.collidableMeshes.push(homeModel);
       this.scene.add(homeModel);
 
       homeModel.updateMatrixWorld(true);
       this.houseBounds.setFromObject(homeModel);
-      this.floorY = -0.412;
+      this.floorY = this.detectFloorY(homeModel);
+      this.playableBounds = this.createPlayableBounds(this.houseBounds, this.floorY);
     }
 
-
-
-    // Charge station visual (glowing ring)
+    this.resolveSpawnPoints();
     this.createChargeStation();
 
-    // Spawn Robot — Y tự tính từ floorY
-    this.robot.spawn(ROBOT_SPAWN.x, this.floorY, ROBOT_SPAWN.z);
+    this.robot.spawn(this.robotSpawn.x, this.robotSpawn.y, this.robotSpawn.z);
     this.scene.add(this.robot.group);
 
-    // Spawn Husky — Y tự tính từ floorY
-    this.husky.spawn(HUSKY_SPAWN.x, this.floorY, HUSKY_SPAWN.z);
+    this.husky.spawn(this.huskySpawn.x, this.huskySpawn.y, this.huskySpawn.z);
+    this.husky.setBounds(this.playableBounds);
     this.scene.add(this.husky.group);
 
-    // Spawn Rat — đặt ở góc phòng, kích thước nhỏ
-    this.rat.spawn(2.0, this.floorY, -1.5);
+    const ratY = this.getGroundYAt(RAT_SPAWN.x, RAT_SPAWN.z, this.floorY + 2) ?? this.floorY;
+    this.rat.spawn(RAT_SPAWN.x, ratY, RAT_SPAWN.z);
+    this.rat.setBounds(this.playableBounds);
     this.scene.add(this.rat.group);
 
-    // Spawn obstacles
-    const spawnBounds = new THREE.Box3(
-      new THREE.Vector3(-3.5, this.floorY, -3.5),
-      new THREE.Vector3(3.5, this.floorY + 2, 3.5)
-    );
-    const spawnedObstacles = this.obstacleSpawner.generateDailyRoom(1, this.floorY, spawnBounds, this.collidableMeshes);
-    for (const obs of spawnedObstacles) {
-      this.scene.add(obs.mesh);
+    this.spawnObstaclesForDay(this.day);
+
+    this.scene.add(this.dirtSpawner.group);
+    void this.spawnDirtForDay(this.day);
+
+    document.getElementById('reset-btn')?.addEventListener('click', () => {
+      this.robot.spawn(this.robotSpawn.x, this.robotSpawn.y, this.robotSpawn.z);
+      this.husky.spawn(this.huskySpawn.x, this.huskySpawn.y, this.huskySpawn.z);
+      this.husky.setBounds(this.playableBounds);
+      this.isGameOver = false;
+      this.gameState.battery = MAX_BATTERY;
+      this.spawnObstaclesForDay(this.day);
+      void this.spawnDirtForDay(this.day);
+      this.updateHud('Game Reset');
+    });
+
+    const musicBtn = document.getElementById('music-btn');
+    musicBtn?.addEventListener('click', () => {
+      this.toggleMusic();
+      musicBtn.textContent = this.audioManager.isMusicPlaying() ? 'MUSIC ON' : 'MUSIC OFF';
+    });
+  }
+
+  private detectFloorY(homeModel: THREE.Object3D): number {
+    const bounds = new THREE.Box3().setFromObject(homeModel);
+    const samples = [
+      { x: ROBOT_SPAWN_HINT.x, z: ROBOT_SPAWN_HINT.z },
+      { x: 0, z: 0 },
+      { x: -1.5, z: 0 },
+      { x: 1.5, z: 0 },
+      { x: 0, z: -1.5 },
+      { x: 0, z: 1.5 },
+    ];
+    const yValues: number[] = [];
+
+    for (const sample of samples) {
+      this.raycaster.set(new THREE.Vector3(sample.x, bounds.max.y + 1, sample.z), new THREE.Vector3(0, -1, 0));
+      const hits = this.raycaster.intersectObject(homeModel, true);
+      for (const hit of hits) {
+        if (hit.point.y >= bounds.min.y - 0.05 && hit.point.y <= bounds.max.y - 0.18) {
+          yValues.push(hit.point.y);
+        }
+      }
     }
 
-    // Spawn dirt for Day 1
-    this.scene.add(this.dirtSpawner.group);
-    this.spawnDirtForDay(this.day);
+    if (!yValues.length) return bounds.min.y;
 
-    // UI Reset Logic
-    const resetBtn = document.getElementById('reset-btn');
-    if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
-        this.robot.spawn(ROBOT_SPAWN.x, this.floorY, ROBOT_SPAWN.z);
-        this.husky.spawn(HUSKY_SPAWN.x, this.floorY, HUSKY_SPAWN.z);
-        this.isGameOver = false;
-        this.gameState.battery = MAX_BATTERY;
-        this.spawnDirtForDay(this.day);
-        this.updateHud('Game Reset');
-      });
+    yValues.sort((a, b) => a - b);
+    return yValues[Math.min(Math.floor(yValues.length * 0.18), yValues.length - 1)];
+  }
+
+  private createPlayableBounds(sourceBounds: THREE.Box3, floorY: number): THREE.Box3 {
+    if (sourceBounds.isEmpty()) {
+      return new THREE.Box3(
+        new THREE.Vector3(-3.5, floorY, -3.5),
+        new THREE.Vector3(3.5, floorY + 2, 3.5)
+      );
+    }
+
+    const bounds = new THREE.Box3(
+      new THREE.Vector3(sourceBounds.min.x + WORLD_MARGIN, floorY, sourceBounds.min.z + WORLD_MARGIN),
+      new THREE.Vector3(sourceBounds.max.x - WORLD_MARGIN, floorY + 2, sourceBounds.max.z - WORLD_MARGIN)
+    );
+
+    if (bounds.min.x >= bounds.max.x || bounds.min.z >= bounds.max.z) {
+      return new THREE.Box3(
+        new THREE.Vector3(-3.5, floorY, -3.5),
+        new THREE.Vector3(3.5, floorY + 2, 3.5)
+      );
+    }
+
+    return bounds;
+  }
+
+  private resolveSpawnPoints() {
+    const cornerCandidates = this.getCornerSpawnCandidates();
+    this.robotSpawn.copy(this.resolveSpawnPoint(cornerCandidates[0], cornerCandidates.slice(1)));
+
+    this.huskySpawn.copy(this.resolveSpawnPoint(HUSKY_SPAWN, [
+      { x: -0.9, z: -1.15 },
+      { x: 0.9, z: -1.15 },
+      { x: 0.0, z: -1.45 },
+    ], this.robotSpawn, 1.25));
+
+    this.chargeStationPosition.copy(this.robotSpawn);
+    this.chargeStationPosition.y = this.floorY + 0.008;
+  }
+
+  private resolveSpawnPoint(
+    preferred: { x: number; z: number },
+    fallbacks: Array<{ x: number; z: number }> = [],
+    avoidPoint?: THREE.Vector3,
+    avoidRadius = 0
+  ): THREE.Vector3 {
+    const center = this.playableBounds.getCenter(new THREE.Vector3());
+    const seededCandidates = [
+      preferred,
+      ...fallbacks,
+      { x: center.x, z: center.z },
+    ];
+    const candidates = [
+      ...seededCandidates,
+      ...this.createSpawnGridCandidates(center),
+    ];
+
+    let best: { point: THREE.Vector3; score: number } | null = null;
+
+    for (const candidate of candidates) {
+      const x = THREE.MathUtils.clamp(candidate.x, this.playableBounds.min.x, this.playableBounds.max.x);
+      const z = THREE.MathUtils.clamp(candidate.z, this.playableBounds.min.z, this.playableBounds.max.z);
+      if (avoidPoint && Math.hypot(x - avoidPoint.x, z - avoidPoint.z) < avoidRadius) continue;
+
+      const groundY = this.getGroundYAt(x, z, this.floorY + 2);
+      if (this.floorMeshes.length > 0 && groundY === undefined) continue;
+
+      const y = groundY ?? this.floorY;
+      if (!this.isPointInsidePlayableBounds(x, z)) continue;
+      if (!this.hasSpawnClearance(x, y, z)) continue;
+
+      const point = new THREE.Vector3(x, y, z);
+      const preferredScore = Math.hypot(x - preferred.x, z - preferred.z);
+      const centerPenalty = point.distanceTo(center) * 0.04;
+      const seededBonus = seededCandidates.some((seed) => Math.abs(seed.x - candidate.x) < 0.001 && Math.abs(seed.z - candidate.z) < 0.001) ? -0.35 : 0;
+      const score = preferredScore + centerPenalty + seededBonus;
+      if (!best || score < best.score) {
+        best = { point, score };
+      }
+    }
+
+    if (best) return best.point;
+
+    const fallbackY = this.getGroundYAt(center.x, center.z, this.floorY + 2) ?? this.floorY;
+    return new THREE.Vector3(center.x, fallbackY, center.z);
+  }
+
+  private getCornerSpawnCandidates(): Array<{ x: number; z: number }> {
+    const inset = 0.58;
+    const right = this.playableBounds.max.x - inset;
+    const left = this.playableBounds.min.x + inset;
+    const front = this.playableBounds.min.z + inset;
+    const back = this.playableBounds.max.z - inset;
+
+    return [
+      { x: right, z: front },
+      { x: right, z: back },
+      { x: left, z: front },
+      { x: left, z: back },
+      { x: ROBOT_SPAWN_HINT.x, z: ROBOT_SPAWN_HINT.z },
+    ];
+  }
+
+  private createSpawnGridCandidates(center: THREE.Vector3): Array<{ x: number; z: number }> {
+    const candidates: Array<{ x: number; z: number }> = [];
+    const insetX = Math.max(0.2, (this.playableBounds.max.x - this.playableBounds.min.x) * 0.12);
+    const insetZ = Math.max(0.2, (this.playableBounds.max.z - this.playableBounds.min.z) * 0.12);
+    const minX = this.playableBounds.min.x + insetX;
+    const maxX = this.playableBounds.max.x - insetX;
+    const minZ = this.playableBounds.min.z + insetZ;
+    const maxZ = this.playableBounds.max.z - insetZ;
+
+    for (let ix = 0; ix < 5; ix += 1) {
+      for (let iz = 0; iz < 5; iz += 1) {
+        candidates.push({
+          x: THREE.MathUtils.lerp(minX, maxX, ix / 4),
+          z: THREE.MathUtils.lerp(minZ, maxZ, iz / 4),
+        });
+      }
+    }
+
+    candidates.sort((a, b) => Math.hypot(a.x - center.x, a.z - center.z) - Math.hypot(b.x - center.x, b.z - center.z));
+    return candidates;
+  }
+
+  private hasSpawnClearance(x: number, y: number, z: number): boolean {
+    if (!this.collidableMeshes.length) return true;
+
+    const origin = new THREE.Vector3(x, y + 0.14, z);
+    const directions = [
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(1, 0, 1).normalize(),
+      new THREE.Vector3(-1, 0, 1).normalize(),
+      new THREE.Vector3(1, 0, -1).normalize(),
+      new THREE.Vector3(-1, 0, -1).normalize(),
+    ];
+    const minClearance = 0.55;
+
+    for (const direction of directions) {
+      this.raycaster.set(origin, direction);
+      const hits = this.raycaster.intersectObjects(this.collidableMeshes, true);
+      const blockingHit = hits.find((hit) => hit.distance > 0.02);
+      if (blockingHit && blockingHit.distance < minClearance) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private isPointInsidePlayableBounds(x: number, z: number) {
+    return (
+      x >= this.playableBounds.min.x &&
+      x <= this.playableBounds.max.x &&
+      z >= this.playableBounds.min.z &&
+      z <= this.playableBounds.max.z
+    );
+  }
+
+  private spawnObstaclesForDay(day: number) {
+    for (const mesh of this.obstacleMeshes) {
+      this.scene.remove(mesh);
+      this.removeCollidable(mesh);
+    }
+    this.obstacleMeshes = [];
+
+    const spawnedObstacles = this.obstacleSpawner.generateDailyRoom(
+      day,
+      this.floorY,
+      this.playableBounds,
+      this.floorMeshes
+    );
+
+    for (const obs of spawnedObstacles) {
+      this.scene.add(obs.mesh);
+      this.collidableMeshes.push(obs.mesh);
+      this.obstacleMeshes.push(obs.mesh);
     }
   }
 
-  /** Create glowing ring for charge station */
+  private removeCollidable(mesh: THREE.Object3D) {
+    const index = this.collidableMeshes.indexOf(mesh);
+    if (index >= 0) {
+      this.collidableMeshes.splice(index, 1);
+    }
+  }
+
   private createChargeStation() {
-    const geo = new THREE.RingGeometry(0.255, CHARGE_RADIUS, 32);
+    const geo = new THREE.RingGeometry(0.24, CHARGE_RADIUS, 40);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x00ff88,
-      emissive: 0x00ff88,
-      emissiveIntensity: 0.5,
+      color: 0x4bf0b0,
+      emissive: 0x24d68e,
+      emissiveIntensity: 0.55,
       transparent: true,
-      opacity: 0.6,
+      opacity: 0.62,
       side: THREE.DoubleSide,
     });
     this.chargeStationMesh = new THREE.Mesh(geo, mat);
     this.chargeStationMesh.rotation.x = -Math.PI / 2;
-    this.chargeStationMesh.position.set(4.0, this.floorY + 0.005, -0.8);
+    this.chargeStationMesh.position.copy(this.chargeStationPosition);
     this.scene.add(this.chargeStationMesh);
   }
 
-  /** Spawn dirt for Day N */
   private async spawnDirtForDay(day: number) {
     const story = getDayStory(day);
     this.dayMission = story.mission;
     this.dayIntroTimer = 3.5;
 
-    const difficultyMultiplier = getDifficultyMultiplier(day);
-
-    // Apply special events
     if (hasSpecialEvent(day, 'reduced_battery')) {
       this.gameState.battery = Math.max(20, this.gameState.battery * 0.7);
-      console.log('⚠️ Special event: Reduced battery');
     }
 
-    if (hasSpecialEvent(day, 'husky_aggressive')) {
-      console.log('⚠️ Special event: Aggressive husky');
-    }
+    await this.dirtSpawner.spawnForDay(day, this.floorY, this.floorMeshes, story.dirtWeights, this.playableBounds);
+    this.dustSpawner.spawnForDay(day, this.floorY, story.dustColor, this.playableBounds);
 
-    await this.dirtSpawner.spawnForDay(day, this.floorY, this.collidableMeshes, story.dirtWeights);
-    this.dustSpawner.spawnForDay(day, this.floorY, story.dustColor);
-
-    const total = this.dirtSpawner.getTotalCount();
-    this.gameState.totalCells = total;
+    this.gameState.totalCells = this.dirtSpawner.getTotalCount();
     this.gameState.cleanedCells = 0;
-
-    console.log(`📊 Day ${day} difficulty: ${difficultyMultiplier}x, Total dirt: ${total}`);
-
     this.saveProgress();
   }
 
@@ -248,10 +461,24 @@ export class Engine {
   public restartDay() {
     this.isGameOver = false;
     this.gameState.battery = MAX_BATTERY;
-    this.robot.spawn(ROBOT_SPAWN.x, this.floorY, ROBOT_SPAWN.z);
-    this.husky.spawn(HUSKY_SPAWN.x, this.floorY, HUSKY_SPAWN.z);
-    this.spawnDirtForDay(this.day);
+    this.robot.spawn(this.robotSpawn.x, this.robotSpawn.y, this.robotSpawn.z);
+    this.husky.spawn(this.huskySpawn.x, this.huskySpawn.y, this.huskySpawn.z);
+    this.husky.setBounds(this.playableBounds);
+    this.spawnObstaclesForDay(this.day);
+    void this.spawnDirtForDay(this.day);
     this.updateHud(`Restarting Day ${this.day}`);
+  }
+
+  public startMusic() {
+    this.audioManager.startMusic();
+  }
+
+  public stopMusic() {
+    this.audioManager.stopMusic();
+  }
+
+  public toggleMusic() {
+    this.audioManager.toggleMusic();
   }
 
   private onResize = () => {
@@ -263,6 +490,8 @@ export class Engine {
   private updateHud(status: string) {
     const story = getDayStory(this.day);
     const difficultyMultiplier = getDifficultyMultiplier(this.day);
+    const cameraSettings = this.robot.getCameraSettings();
+    const cameraSettingsText = `H: ${(cameraSettings.height * 100).toFixed(0)}cm | FOV: ${cameraSettings.fov.toFixed(0)}deg`;
 
     this.uiManager.update(
       this.gameState.battery,
@@ -273,15 +502,19 @@ export class Engine {
       status,
       this.day,
       this.dayMission || story.mission,
-      difficultyMultiplier
+      difficultyMultiplier,
+      cameraSettingsText,
+      story.title
     );
   }
 
   private animate = () => {
     requestAnimationFrame(this.animate);
+
     const currentTime = performance.now();
     const deltaTime = Math.min(0.033, (currentTime - this.previousTime) / 1000);
     this.previousTime = currentTime;
+    this.wallHitCooldown = Math.max(0, this.wallHitCooldown - deltaTime);
 
     if (this.isGameOver) {
       this.renderer.render(this.scene, this.camera);
@@ -290,27 +523,27 @@ export class Engine {
 
     const pauseScreen = document.getElementById('pause-screen');
     if (!this.input.state.isLocked) {
-      if (pauseScreen) pauseScreen.classList.add('active');
+      pauseScreen?.classList.add('active');
       this.audioManager.setMovement(false);
       this.renderer.render(this.scene, this.camera);
       return;
-    } else {
-      if (pauseScreen) pauseScreen.classList.remove('active');
     }
+
+    pauseScreen?.classList.remove('active');
 
     const isPlayerInputMoving = this.input.state.forward || this.input.state.backward || this.input.state.left || this.input.state.right;
     const isCleaning = this.input.state.suction || this.input.state.mop;
 
-    // === Husky AI ===
+    this.handleCameraAdjustments(deltaTime);
+    this.robot.getPosition(this.currentPosition);
+
     this.husky.update(
       deltaTime,
-      // Wall collision callback
       (origin, dir, dist) => {
         this.raycaster.set(origin, dir);
         const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
         return intersects.length > 0 && intersects[0].distance < dist;
       },
-      // Line-of-sight callback: returns TRUE if a wall BLOCKS the path from->to
       (from, to) => {
         const dir = new THREE.Vector3().subVectors(to, from).normalize();
         const dist = from.distanceTo(to);
@@ -318,45 +551,18 @@ export class Engine {
         const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
         return intersects.length > 0 && intersects[0].distance < dist;
       },
-      this.currentPosition, isPlayerInputMoving, isCleaning,
-      // Ground height under Husky (raycast down). Returns undefined if no hit.
-      (x, z, fromY) => {
-        const origin = new THREE.Vector3(x, fromY, z);
-        this.raycaster.set(origin, new THREE.Vector3(0, -1, 0));
-        const hits = this.raycaster.intersectObjects(this.collidableMeshes, true);
-        if (!hits.length) return undefined;
-        const hitY = hits[0].point.y;
-        // Prevent Husky from snapping onto furniture tops; allow tiny variations only.
-        if (hitY > this.floorY + 0.08) return this.floorY;
-        return hitY;
-      }
+      this.currentPosition,
+      isPlayerInputMoving,
+      isCleaning,
+      (x, z, fromY) => this.getGroundYAt(x, z, fromY)
     );
 
-    // === Rat AI ===
     this.rat.update(deltaTime);
-
-    // === Dust particles update ===
     this.dustSpawner.update(deltaTime);
+    this.handleRandomHuskyBite(deltaTime);
 
-    // === Husky random bite check ===
-    this.huskyRandomTimer += deltaTime;
-    if (this.huskyRandomTimer >= this.HUSKY_RANDOM_CHECK_INTERVAL) {
-      this.huskyRandomTimer = 0;
-      const difficultyMultiplier = getDifficultyMultiplier(this.day);
-      const biteChance = HUSKY_RANDOM_BITE_BASE * difficultyMultiplier + (this.day - 1) * 0.01;
-
-      // More aggressive on special event days
-      const aggressiveModifier = hasSpecialEvent(this.day, 'husky_aggressive') ? 1.5 : 1.0;
-
-      if (Math.random() < biteChance * aggressiveModifier && this.husky.state !== 'chase') {
-        this.husky.startChase();
-        this.audioManager.playBark();
-      }
-    }
-
-    // === Robot movement ===
     this.robot.getPosition(this.currentPosition);
-    
+
     let currentSpeed = MOVE_SPEED;
     if (this.input.state.mop) {
       currentSpeed = MOP_SPEED;
@@ -365,63 +571,18 @@ export class Engine {
     }
 
     const targetPosition = this.robot.update(deltaTime, this.input.state, currentSpeed);
-    this.robot.getBoundingBox(this.currentPosition, this.currentBox);
-    this.robot.getBoundingBox(targetPosition, this.targetBox);
-
     const isMoving = !this.currentPosition.equals(targetPosition);
-    let hitWall = false;
-
-    if (isMoving) {
-      this.rayDir.copy(targetPosition).sub(this.currentPosition);
-      const dist = this.rayDir.length();
-      if (dist > 0) {
-        this.rayDir.normalize();
-        const STOP_DIST = 0.15; // Giảm xuống để tiến sát tường hơn
-        const RAY_SPREAD = 0.15; // Thu hẹp tia quét ngang cho vừa với kích thước robot
-        const leftOffset1 = new THREE.Vector3(-this.rayDir.z, 0, this.rayDir.x).multiplyScalar(RAY_SPREAD);
-        const rightOffset1 = new THREE.Vector3(this.rayDir.z, 0, -this.rayDir.x).multiplyScalar(RAY_SPREAD);
-        const leftOffset2 = new THREE.Vector3(-this.rayDir.z, 0, this.rayDir.x).multiplyScalar(RAY_SPREAD * 0.5);
-        const rightOffset2 = new THREE.Vector3(this.rayDir.z, 0, -this.rayDir.x).multiplyScalar(RAY_SPREAD * 0.5);
-
-        const origins = [
-          this.currentPosition.clone(),
-          this.currentPosition.clone().add(leftOffset1),
-          this.currentPosition.clone().add(rightOffset1),
-          this.currentPosition.clone().add(leftOffset2),
-          this.currentPosition.clone().add(rightOffset2)
-        ];
-
-        for (const origin of origins) {
-          origin.y += 0.1;
-          this.raycaster.set(origin, this.rayDir);
-          const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
-          if (intersects.length > 0 && intersects[0].distance < dist + STOP_DIST) {
-            hitWall = true;
-            break;
-          }
-        }
-      }
-    }
-
-    // === Husky collision ===
+    let hitWall = this.checkMovementCollision(targetPosition, isMoving);
     let hitHusky = false;
-    // Check both current and intended next position to prevent "near pass-through".
+
     const huskyPos = this.husky.group.position;
-    const huskyDistNow = this.currentPosition.distanceTo(huskyPos);
-    const huskyDistNext = targetPosition.distanceTo(huskyPos);
-    const huskyDist = Math.min(huskyDistNow, huskyDistNext);
-    
-    // Slightly larger hitbox + continuous check (next position) so it doesn't feel like clipping.
-    if (huskyDist < 0.28) {
+    const huskyDist = Math.min(this.currentPosition.distanceTo(huskyPos), targetPosition.distanceTo(huskyPos));
+    if (huskyDist < 0.30) {
       hitHusky = true;
       hitWall = true;
-
-      // Drain battery and bump player instead of Instant Death
       this.gameState.battery = Math.max(0, this.gameState.battery - 10);
       this.bumpTimer = 0.5;
       this.cameraShakeTimer = 0.25;
-
-      // Push away from husky for a tactile collision feel.
       this.bumpDir.copy(this.currentPosition).sub(huskyPos);
       this.bumpDir.y = 0;
       if (this.bumpDir.lengthSq() < 1e-6) {
@@ -429,23 +590,16 @@ export class Engine {
       } else {
         this.bumpDir.normalize();
       }
-
-      if (this.husky.state === 'chase') {
+      if (this.husky.state === 'chase' || Math.random() >= HUSKY_BARK_CHANCE) {
         this.audioManager.playBite();
       } else {
-        // Handle collision events
-        if (Math.random() < HUSKY_BARK_CHANCE) {
-          this.audioManager.playBark();
-        } else {
-          this.audioManager.playBite();
-        }
+        this.audioManager.playBark();
       }
     }
 
-    // === Charge station logic ===
     const distToCharger = Math.hypot(
-      this.currentPosition.x - CHARGE_STATION.x,
-      this.currentPosition.z - CHARGE_STATION.z
+      this.currentPosition.x - this.chargeStationPosition.x,
+      this.currentPosition.z - this.chargeStationPosition.z
     );
     this.isCharging = distToCharger < CHARGE_RADIUS && this.gameState.battery < MAX_BATTERY;
 
@@ -456,16 +610,14 @@ export class Engine {
         this.chargeSoundTimer = 0;
         this.audioManager.playCharge();
       }
-      const pulse = 0.4 + Math.sin(currentTime * 0.005) * 0.3;
+      const pulse = 0.46 + Math.sin(currentTime * 0.005) * 0.22;
       (this.chargeStationMesh.material as THREE.MeshStandardMaterial).opacity = pulse;
     }
 
-    // === Battery drain ===
     let drainRate = 0;
     let status = 'Ready';
     const story = getDayStory(this.day);
 
-    // Show day intro status briefly (story beat)
     if (this.dayIntroTimer > 0) {
       this.dayIntroTimer = Math.max(0, this.dayIntroTimer - deltaTime);
       status = story.introStatus;
@@ -473,7 +625,6 @@ export class Engine {
 
     if (this.isCharging) {
       status = `Charging... ${Math.round(this.gameState.battery)}%`;
-      drainRate = 0; 
     } else if (this.input.state.suction) {
       drainRate = BATTERY_DRAIN_SWEEP;
       status = 'Sweeping...';
@@ -490,80 +641,28 @@ export class Engine {
       if (Math.random() < 0.02) this.saveProgress();
     }
 
-    // === Game over when out of battery ===
     if (this.gameState.battery <= 0 && !this.isCharging) {
-      this.triggerGameOver('OUT OF BATTERY! Robot failed to return to base.');
+      this.triggerGameOver('Out of battery. Robot failed to return to base.');
       return;
     }
 
-    // === Sweep/Mop actions ===
-    this.actionCooldown = Math.max(0, this.actionCooldown - deltaTime);
+    status = this.handleCleaning(deltaTime, status);
 
-    if (this.actionCooldown <= 0) {
-      const nearestDirt = this.dirtSpawner.findNearestSpot(this.currentPosition);
-      const isSweeping = this.input.state.suction;
-
-      // Check dust particle collision
-      if (this.dustSpawner.checkCollision(this.currentPosition, isSweeping)) {
-         this.audioManager.playSweep();
-         status = 'Sucked up dust!';
-      }
-
-      if (isSweeping && nearestDirt) {
-        const result = this.dirtSpawner.applySweep(nearestDirt);
-        this.actionCooldown = this.ACTION_INTERVAL;
-        if (result === 'wrong_tool') {
-          this.audioManager.playWrongTool();
-          status = 'Needs MOP [R], not sweep!';
-        } else if (result === 'cleaned') {
-          this.audioManager.playClean();
-          this.gameState.cleanedCells++;
-          status = 'Swept clean!';
-        } else {
-          this.audioManager.playSweep();
-          status = 'Sweeping...';
-        }
-      } else if (this.input.state.mop && nearestDirt) {
-        const result = this.dirtSpawner.applyMop(nearestDirt);
-        this.actionCooldown = this.ACTION_INTERVAL;
-        if (result === 'wrong_tool') {
-          this.audioManager.playWrongTool();
-          status = 'Sweep [E] first!';
-        } else if (result === 'cleaned') {
-          this.audioManager.playClean();
-          this.gameState.cleanedCells++;
-          status = 'Mopped clean!';
-        } else {
-          this.audioManager.playMop();
-          status = 'Mopping...';
-        }
-      }
+    if (!this.isAdvancingDay && this.dirtSpawner.isAllCleaned() && this.gameState.totalCells > 0) {
+      status = `Day ${this.day} complete. Loading next level.`;
+      void this.advanceDay();
     }
 
-    // === Day complete check ===
-    if (this.dirtSpawner.isAllCleaned() && this.gameState.totalCells > 0) {
-      this.audioManager.playDayComplete();
-      this.day++;
-      this.gameState.day = this.day;
-      this.gameState.battery = MAX_BATTERY; // Reward full battery
-      this.spawnDirtForDay(this.day);
-      status = `Day ${this.day - 1} Complete! Welcome to Day ${this.day}`;
-      this.saveProgress();
-    }
-
-    // === Movement resolution ===
     if (this.bumpTimer > 0) {
       this.bumpTimer = Math.max(0, this.bumpTimer - deltaTime);
       status = 'Recovering...';
-      // Apply a short pushback; don't allow drifting upward.
-      const bumpSpeed = 0.9;
-      this.robot.group.position.addScaledVector(this.bumpDir, bumpSpeed * deltaTime);
+      this.robot.group.position.addScaledVector(this.bumpDir, 0.9 * deltaTime);
     } else if (hitWall && isMoving) {
       this.audioManager.setMovement(false);
-      if (hitHusky) {
-        status = 'Husky in the way!';
-      } else {
-        status = 'Hit wall!';
+      status = hitHusky ? 'Husky in the way!' : 'Obstacle detected.';
+      if (!hitHusky && this.wallHitCooldown <= 0) {
+        this.audioManager.playWallHit();
+        this.wallHitCooldown = 0.45;
       }
     } else if (isMoving && this.gameState.battery > 0) {
       this.robot.group.position.copy(targetPosition);
@@ -572,26 +671,207 @@ export class Engine {
       this.audioManager.setMovement(false);
     }
 
-    // === Camera shake on impact ===
+    this.applyCameraShake(deltaTime);
+    this.updateCameraOcclusion();
+    this.updateHud(status);
+    this.renderer.render(this.scene, this.camera);
+  };
+
+  private updateCameraOcclusion() {
+    this.robot.resetCameraBoomDistance();
+    const desiredCameraPosition = this.camera.getWorldPosition(new THREE.Vector3());
+    const origin = this.robot.group.position.clone();
+    origin.y += 0.18;
+
+    const toCamera = desiredCameraPosition.sub(origin);
+    const desiredDistance = toCamera.length();
+    if (desiredDistance <= 0.1) {
+      this.robot.resetCameraBoomDistance();
+      return;
+    }
+
+    this.raycaster.set(origin, toCamera.normalize());
+    const hits = this.raycaster.intersectObjects(this.collidableMeshes, true);
+    const blockingHit = hits.find((hit) => hit.distance > 0.08 && hit.distance < desiredDistance - 0.05);
+
+    if (!blockingHit) {
+      this.robot.resetCameraBoomDistance();
+      return;
+    }
+
+    const safeRatio = Math.max(0.35, (blockingHit.distance - 0.12) / desiredDistance);
+    this.robot.setCameraBoomDistance(this.robot.getDefaultCameraBoomDistance() * safeRatio);
+  }
+
+  private getGroundYAt(x: number, z: number, fromY: number): number | undefined {
+    if (!this.floorMeshes.length) return undefined;
+
+    this.raycaster.set(new THREE.Vector3(x, fromY, z), new THREE.Vector3(0, -1, 0));
+    const hits = this.raycaster.intersectObjects(this.floorMeshes, true);
+    const hit = hits.find((entry) => Math.abs(entry.point.y - this.floorY) < 0.18);
+
+    return hit?.point.y;
+  }
+
+  private handleRandomHuskyBite(deltaTime: number) {
+    this.huskyRandomTimer += deltaTime;
+    if (this.huskyRandomTimer < this.HUSKY_RANDOM_CHECK_INTERVAL) return;
+
+    this.huskyRandomTimer = 0;
+    const difficultyMultiplier = getDifficultyMultiplier(this.day);
+    const biteChance = HUSKY_RANDOM_BITE_BASE * difficultyMultiplier + (this.day - 1) * 0.01;
+    const aggressiveModifier = hasSpecialEvent(this.day, 'husky_aggressive') ? 1.5 : 1.0;
+
+    if (Math.random() < biteChance * aggressiveModifier && this.husky.state !== 'chase') {
+      this.husky.startChase();
+      this.audioManager.playBark();
+    }
+  }
+
+  private checkMovementCollision(targetPosition: THREE.Vector3, isMoving: boolean): boolean {
+    if (!isMoving) return false;
+
+    this.rayDir.copy(targetPosition).sub(this.currentPosition);
+    const dist = this.rayDir.length();
+    if (dist <= 0) return false;
+
+    this.rayDir.normalize();
+    const stopDist = 0.13;
+    const raySpread = 0.14;
+    const left = new THREE.Vector3(-this.rayDir.z, 0, this.rayDir.x);
+    const right = new THREE.Vector3(this.rayDir.z, 0, -this.rayDir.x);
+    const origins = [
+      this.currentPosition,
+      this.currentPosition.clone().addScaledVector(left, raySpread),
+      this.currentPosition.clone().addScaledVector(right, raySpread),
+      this.currentPosition.clone().addScaledVector(left, raySpread * 0.5),
+      this.currentPosition.clone().addScaledVector(right, raySpread * 0.5),
+    ];
+
+    for (const origin of origins) {
+      const rayOrigin = origin.clone();
+      rayOrigin.y += 0.1;
+      this.raycaster.set(rayOrigin, this.rayDir);
+      const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
+      if (intersects.length > 0 && intersects[0].distance < dist + stopDist) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private handleCleaning(deltaTime: number, currentStatus: string): string {
+    this.actionCooldown = Math.max(0, this.actionCooldown - deltaTime);
+    this.uiManager.updateActionPrompt(this.input.state.suction, this.input.state.mop);
+
+    if (this.actionCooldown > 0) return currentStatus;
+
+    const nearestDirt = this.dirtSpawner.findNearestSpot(this.currentPosition);
+    const isSweeping = this.input.state.suction;
+
+    if (this.dustSpawner.checkCollision(this.currentPosition, isSweeping)) {
+      this.audioManager.playSweep();
+      currentStatus = 'Dust collected.';
+    }
+
+    if (isSweeping && nearestDirt) {
+      const result = this.dirtSpawner.applySweep(nearestDirt);
+      this.actionCooldown = this.ACTION_INTERVAL;
+      if (result === 'wrong_tool') {
+        this.audioManager.playWrongTool();
+        return 'Needs mop [R].';
+      }
+      if (result === 'cleaned') {
+        this.audioManager.playClean();
+        this.gameState.cleanedCells += 1;
+        return 'Swept clean.';
+      }
+      this.audioManager.playSweep();
+      return 'Sweeping stain...';
+    }
+
+    if (this.input.state.mop && nearestDirt) {
+      const result = this.dirtSpawner.applyMop(nearestDirt);
+      this.actionCooldown = this.ACTION_INTERVAL;
+      if (result === 'wrong_tool') {
+        this.audioManager.playWrongTool();
+        return 'Sweep [E] first.';
+      }
+      if (result === 'cleaned') {
+        this.audioManager.playClean();
+        this.gameState.cleanedCells += 1;
+        return 'Mopped clean.';
+      }
+      this.audioManager.playMop();
+      return 'Mopping stain...';
+    }
+
+    return currentStatus;
+  }
+
+  private async advanceDay() {
+    this.isAdvancingDay = true;
+    this.audioManager.playDayComplete();
+
+    this.day += 1;
+    this.gameState.day = this.day;
+    this.gameState.battery = MAX_BATTERY;
+    this.spawnObstaclesForDay(this.day);
+    await this.spawnDirtForDay(this.day);
+    this.saveProgress();
+    this.isAdvancingDay = false;
+  }
+
+  private applyCameraShake(deltaTime: number) {
     if (this.cameraShakeTimer > 0) {
       this.cameraShakeTimer = Math.max(0, this.cameraShakeTimer - deltaTime);
       const t = this.cameraShakeTimer / 0.25;
       const amp = 0.01 * t;
-      const sx = (Math.random() * 2 - 1) * amp;
-      const sz = (Math.random() * 2 - 1) * amp;
-      this.robot.cameraGroup.position.set(sx, 0, sz);
+      this.robot.cameraGroup.position.set((Math.random() * 2 - 1) * amp, 0, (Math.random() * 2 - 1) * amp);
     } else {
       this.robot.cameraGroup.position.set(0, 0, 0);
     }
+  }
 
-    this.updateHud(status);
-    this.renderer.render(this.scene, this.camera);
-  };
+  private handleCameraAdjustments(deltaTime: number) {
+    const adjustmentSpeed = 0.5;
+    const currentSettings = this.robot.getCameraSettings();
+    let settingsChanged = false;
+
+    if (this.input.state.cameraUp) {
+      this.robot.setCameraHeight(Math.min(0.9, currentSettings.height + adjustmentSpeed * deltaTime));
+      settingsChanged = true;
+    }
+    if (this.input.state.cameraDown) {
+      this.robot.setCameraHeight(Math.max(0.36, currentSettings.height - adjustmentSpeed * deltaTime));
+      settingsChanged = true;
+    }
+    if (this.input.state.fovIncrease) {
+      this.robot.setCameraFOV(Math.min(84, currentSettings.fov + adjustmentSpeed * deltaTime * 10));
+      settingsChanged = true;
+    }
+    if (this.input.state.fovDecrease) {
+      this.robot.setCameraFOV(Math.max(58, currentSettings.fov - adjustmentSpeed * deltaTime * 10));
+      settingsChanged = true;
+    }
+    if (this.input.state.resetCamera) {
+      this.robot.resetCameraView();
+      this.input.state.resetCamera = false;
+      settingsChanged = true;
+    }
+
+    this.cameraUpdateTimer += deltaTime;
+    if (this.cameraUpdateTimer >= this.CAMERA_UPDATE_INTERVAL || settingsChanged) {
+      this.cameraUpdateTimer = 0;
+    }
+  }
 
   private triggerGameOver(message: string) {
     this.isGameOver = true;
     this.updateHud(message);
     this.audioManager.setMovement(false);
+    this.audioManager.playGameOver();
 
     if (document.pointerLockElement) {
       document.exitPointerLock();

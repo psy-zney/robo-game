@@ -1,8 +1,16 @@
 import * as THREE from 'three';
 import { CELL_SIZE } from '../utils/constants';
 
+/**
+ * Floating item types for collectible objects
+ * Các loại vật phẩm nổi để thu thập
+ */
 export type FloatingItemType = 'SMALL' | 'DUST' | 'MEDIUM';
 
+/**
+ * Floating item interface for collectible objects
+ * Giao diện vật phẩm nổi để thu thập
+ */
 export interface FloatingItem {
   type: FloatingItemType;
   mesh: THREE.Mesh;
@@ -10,6 +18,14 @@ export interface FloatingItem {
   baseY: number;
 }
 
+/**
+ * Create a floating item at specified position
+ * Tạo vật phẩm nổi tại vị trí được chỉ định
+ * @param type - Type of floating item to create
+ * @param x - X position in world coordinates
+ * @param z - Z position in world coordinates
+ * @returns Floating item object with mesh and properties
+ */
 export function createFloatingItem(type: FloatingItemType, x: number, z: number): FloatingItem {
   let geometry: THREE.BufferGeometry;
   let material: THREE.MeshStandardMaterial;

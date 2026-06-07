@@ -1,45 +1,58 @@
+type BrowserAudioWindow = Window &
+  typeof globalThis & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+
 export class AudioManager {
   private audioCtx: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
   private motorOsc: OscillatorNode | null = null;
   private motorGain: GainNode | null = null;
   private motorFilter: BiquadFilterNode | null = null;
-  private backgroundOsc1: OscillatorNode | null = null;
-  private backgroundOsc2: OscillatorNode | null = null;
-  private backgroundGain: GainNode | null = null;
-  private initialized = false;
+  private musicGain: GainNode | null = null;
+  private padOscillators: OscillatorNode[] = [];
 
-  // Audio settings
+  private initialized = false;
+  private musicWanted = false;
+  private musicPlaying = false;
+  private musicIntervalId: number | null = null;
+  private musicStep = 0;
+
   private masterVolume = 0.8;
   private sfxVolume = 0.7;
   private musicVolume = 0.3;
 
   public initOnUserGesture() {
-    window.addEventListener(
-      'pointerdown',
-      () => {
-        this.init();
-      },
-      { once: true }
-    );
+    const init = () => this.init();
+    window.addEventListener('pointerdown', init, { once: true });
+    window.addEventListener('keydown', init, { once: true });
   }
 
   private init() {
-    if (this.initialized) {
-      return;
-    }
+    if (this.initialized) return;
 
-    const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioCtor = window.AudioContext || (window as BrowserAudioWindow).webkitAudioContext;
     if (!AudioCtor) {
       console.warn('Web Audio API not supported');
       return;
     }
 
     this.audioCtx = new AudioCtor();
+    this.masterGain = this.audioCtx.createGain();
+    this.masterGain.gain.value = this.masterVolume;
+    this.masterGain.connect(this.audioCtx.destination);
 
-    // Create master gain for volume control
-    const masterGain = this.audioCtx.createGain();
-    masterGain.gain.value = this.masterVolume;
-    masterGain.connect(this.audioCtx.destination);
+    this.setupMotor();
+    this.setupMusic();
+
+    this.initialized = true;
+    if (this.musicWanted) {
+      this.startMusic();
+    }
+  }
+
+  private setupMotor() {
+    if (!this.audioCtx || !this.masterGain) return;
 
     this.motorGain = this.audioCtx.createGain();
     this.motorGain.gain.value = 0;
@@ -49,38 +62,85 @@ export class AudioManager {
     this.motorFilter.frequency.value = 700;
     this.motorFilter.Q.value = 1.3;
 
-    this.backgroundGain = this.audioCtx.createGain();
-    this.backgroundGain.gain.value = this.musicVolume * 0.05;
-
-    this.motorGain.connect(this.motorFilter);
-    this.motorFilter.connect(masterGain);
-    this.backgroundGain.connect(masterGain);
-
     this.motorOsc = this.audioCtx.createOscillator();
     this.motorOsc.type = 'sine';
     this.motorOsc.frequency.value = 120;
     this.motorOsc.connect(this.motorGain);
+    this.motorGain.connect(this.motorFilter);
+    this.motorFilter.connect(this.masterGain);
     this.motorOsc.start();
-
-    this.backgroundOsc1 = this.audioCtx.createOscillator();
-    this.backgroundOsc1.type = 'sine';
-    this.backgroundOsc1.frequency.value = 64;
-    this.backgroundOsc1.connect(this.backgroundGain);
-    this.backgroundOsc1.start();
-
-    this.backgroundOsc2 = this.audioCtx.createOscillator();
-    this.backgroundOsc2.type = 'triangle';
-    this.backgroundOsc2.frequency.value = 78;
-    this.backgroundOsc2.connect(this.backgroundGain);
-    this.backgroundOsc2.start();
-
-    this.initialized = true;
-    console.log('🔊 Audio system initialized');
   }
 
-  // Volume control
+  private setupMusic() {
+    if (!this.audioCtx || !this.masterGain) return;
+
+    this.musicGain = this.audioCtx.createGain();
+    this.musicGain.gain.value = 0;
+    this.musicGain.connect(this.masterGain);
+
+    const padFrequencies = [55, 82.5, 110, 164.81];
+    for (const [index, frequency] of padFrequencies.entries()) {
+      const osc = this.audioCtx.createOscillator();
+      const gain = this.audioCtx.createGain();
+      osc.type = index % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.value = frequency;
+      osc.detune.value = (Math.random() - 0.5) * 8;
+      gain.gain.value = 0.018;
+      osc.connect(gain);
+      gain.connect(this.musicGain);
+      osc.start();
+      this.padOscillators.push(osc);
+    }
+  }
+
+  public startMusic() {
+    this.musicWanted = true;
+    if (!this.audioCtx || !this.musicGain || this.musicPlaying) return;
+
+    if (this.audioCtx.state === 'suspended') {
+      void this.audioCtx.resume();
+    }
+
+    const t = this.audioCtx.currentTime;
+    if (this.padOscillators.length === 0) {
+      this.setupMusic();
+    }
+    this.musicGain.gain.cancelScheduledValues(t);
+    this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t);
+    this.musicGain.gain.linearRampToValueAtTime(this.musicVolume * 0.24, t + 1.6);
+    this.musicPlaying = true;
+    this.startMusicSequencer();
+  }
+
+  public stopMusic() {
+    this.musicWanted = false;
+    if (!this.audioCtx || !this.musicGain || !this.musicPlaying) return;
+
+    const t = this.audioCtx.currentTime;
+    this.musicGain.gain.cancelScheduledValues(t);
+    this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t);
+    this.musicGain.gain.linearRampToValueAtTime(0, t + 0.8);
+    this.musicPlaying = false;
+    this.stopMusicSequencer();
+  }
+
+  public toggleMusic() {
+    if (this.musicPlaying || this.musicWanted) {
+      this.stopMusic();
+    } else {
+      this.startMusic();
+    }
+  }
+
+  public isMusicPlaying() {
+    return this.musicPlaying || this.musicWanted;
+  }
+
   public setMasterVolume(volume: number) {
     this.masterVolume = Math.max(0, Math.min(1, volume));
+    if (this.masterGain) {
+      this.masterGain.gain.value = this.masterVolume;
+    }
   }
 
   public setSfxVolume(volume: number) {
@@ -89,407 +149,258 @@ export class AudioManager {
 
   public setMusicVolume(volume: number) {
     this.musicVolume = Math.max(0, Math.min(1, volume));
-    if (this.backgroundGain) {
-      this.backgroundGain.gain.value = this.musicVolume * 0.05;
+    if (this.musicGain && this.musicPlaying) {
+      this.musicGain.gain.value = this.musicVolume * 0.24;
     }
   }
 
   public setMovement(active: boolean) {
-    if (!this.audioCtx || !this.motorGain) {
-      return;
-    }
+    if (!this.audioCtx || !this.motorGain || !this.motorOsc) return;
 
     const targetVolume = active ? 0.04 * this.sfxVolume : 0;
     this.motorGain.gain.cancelScheduledValues(this.audioCtx.currentTime);
     this.motorGain.gain.setTargetAtTime(targetVolume, this.audioCtx.currentTime, 0.12);
-    if (active && this.motorOsc) {
-      this.motorOsc.frequency.setTargetAtTime(140, this.audioCtx.currentTime, 0.16);
-    } else if (this.motorOsc) {
-      this.motorOsc.frequency.setTargetAtTime(120, this.audioCtx.currentTime, 0.16);
-    }
+    this.motorOsc.frequency.setTargetAtTime(active ? 142 : 120, this.audioCtx.currentTime, 0.16);
   }
 
   public playBump() {
-    if (!this.audioCtx) {
-      return;
-    }
-
-    const osc = this.audioCtx.createOscillator();
-    const gain = this.audioCtx.createGain();
-    const filter = this.audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 480;
-
-    osc.type = 'triangle';
-    osc.frequency.value = 280;
-    gain.gain.value = 0.08 * this.sfxVolume;
-    gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.15);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.audioCtx.destination);
-
-    osc.start();
-    osc.stop(this.audioCtx.currentTime + 0.15);
+    this.playTone({ frequency: 280, endFrequency: 120, duration: 0.15, type: 'triangle', gain: 0.08, filter: 480 });
   }
 
   public playClean() {
-    if (!this.audioCtx) {
-      return;
+    this.playTone({ frequency: 620, endFrequency: 980, duration: 0.12, type: 'triangle', gain: 0.08, filter: 1200 });
+  }
+
+  public playSweep() {
+    this.playNoise(0.15, 0.12, 'bandpass', 3000);
+  }
+
+  public playMop() {
+    this.playTone({ frequency: 200, endFrequency: 80, duration: 0.20, type: 'sine', gain: 0.10, filter: 400 });
+  }
+
+  public playBark() {
+    this.playTone({ frequency: 410, endFrequency: 250, duration: 0.12, type: 'sawtooth', gain: 0.15, filter: 900 });
+    window.setTimeout(() => {
+      this.playTone({ frequency: 390, endFrequency: 230, duration: 0.12, type: 'sawtooth', gain: 0.13, filter: 850 });
+    }, 180);
+  }
+
+  public playBite() {
+    this.playTone({ frequency: 180, endFrequency: 95, duration: 0.50, type: 'sawtooth', gain: 0.20, filter: 620 });
+  }
+
+  public playCharge() {
+    this.playTone({ frequency: 440, endFrequency: 660, duration: 0.50, type: 'sine', gain: 0.035, filter: 1200 });
+  }
+
+  public playDayComplete() {
+    this.playNotes([523.25, 659.25, 783.99, 1046.5], 0.12, 0.28, 0.09);
+  }
+
+  public playWrongTool() {
+    this.playTone({ frequency: 150, endFrequency: 110, duration: 0.15, type: 'square', gain: 0.06, filter: 500 });
+  }
+
+  public playWallHit() {
+    this.playTone({ frequency: 150, endFrequency: 55, duration: 0.15, type: 'triangle', gain: 0.15, filter: 300 });
+  }
+
+  public playHuskyCollision() {
+    this.playTone({ frequency: 210, endFrequency: 80, duration: 0.25, type: 'sawtooth', gain: 0.20, filter: 480 });
+  }
+
+  public playBatteryFull() {
+    this.playNotes([523.25, 659.25, 783.99], 0.08, 0.20, 0.08);
+  }
+
+  public playBatteryLow() {
+    this.playTone({ frequency: 880, endFrequency: 660, duration: 0.20, type: 'square', gain: 0.10, filter: 1600 });
+  }
+
+  public playGameOver() {
+    this.playNotes([440, 392, 349.23, 293.66], 0.15, 0.30, 0.11, 'sawtooth');
+  }
+
+  public playCollectItem() {
+    this.playTone({ frequency: 880, endFrequency: 1760, duration: 0.15, type: 'sine', gain: 0.10, filter: 2400 });
+  }
+
+  public playStorageFull() {
+    this.playTone({ frequency: 220, endFrequency: 180, duration: 0.20, type: 'square', gain: 0.08, filter: 800 });
+  }
+
+  private startMusicSequencer() {
+    if (this.musicIntervalId !== null) return;
+
+    this.musicStep = 0;
+    this.musicIntervalId = window.setInterval(() => this.scheduleMusicStep(), 240);
+  }
+
+  private stopMusicSequencer() {
+    if (this.musicIntervalId === null) return;
+
+    window.clearInterval(this.musicIntervalId);
+    this.musicIntervalId = null;
+  }
+
+  private scheduleMusicStep() {
+    if (!this.audioCtx || !this.musicGain || !this.musicPlaying) return;
+
+    const t = this.audioCtx.currentTime;
+    const step = this.musicStep % 16;
+    const bass = [55, 55, 82.5, 73.42, 65.41, 65.41, 82.5, 98];
+    const arp = [220, 261.63, 329.63, 392, 329.63, 261.63, 246.94, 196];
+
+    if (step % 4 === 0) {
+      this.playMusicTone(bass[(step / 2) % bass.length], t, 0.22, 'triangle', 0.09, 420);
     }
+    if (step % 2 === 0) {
+      this.playMusicTone(arp[(step / 2) % arp.length], t + 0.015, 0.16, 'sine', 0.035, 1200);
+    }
+    if (step % 4 === 2) {
+      this.playMusicNoise(t, 0.055);
+    }
+
+    this.musicStep = (this.musicStep + 1) % 16;
+  }
+
+  private playMusicTone(
+    frequency: number,
+    startTime: number,
+    duration: number,
+    type: OscillatorType,
+    gainValue: number,
+    filterFrequency: number
+  ) {
+    if (!this.audioCtx || !this.musicGain) return;
 
     const osc = this.audioCtx.createOscillator();
     const gain = this.audioCtx.createGain();
     const filter = this.audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 1000;
 
-    osc.type = 'triangle';
-    osc.frequency.value = 600;
-    gain.gain.value = 0.08 * this.sfxVolume;
-    gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.12);
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, startTime);
+    filter.type = 'lowpass';
+    filter.frequency.value = filterFrequency;
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.exponentialRampToValueAtTime(gainValue, startTime + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
     osc.connect(filter);
     filter.connect(gain);
-    gain.connect(this.audioCtx.destination);
-
-    osc.start();
-    osc.stop(this.audioCtx.currentTime + 0.12);
+    gain.connect(this.musicGain);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.02);
   }
 
-  // ════════════════════════════════════════════
-  // Âm thanh mới - New sound effects
-  // ════════════════════════════════════════════
+  private playMusicNoise(startTime: number, duration: number) {
+    if (!this.audioCtx || !this.musicGain) return;
 
-  /** Âm thanh quét sàn - Sweep sound (scratchy noise) */
-  public playSweep() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-    const bufferSize = this.audioCtx.sampleRate * 0.15;
-    const buffer = this.audioCtx.createBuffer(1, bufferSize, this.audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    // Tạo tiếng xào xạc bằng noise ngẫu nhiên - Generate scratchy noise
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * 0.3;
-    }
-    const source = this.audioCtx.createBufferSource();
-    source.buffer = buffer;
+    const source = this.createNoiseSource(duration);
     const filter = this.audioCtx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 3000;
-    filter.Q.value = 0.5;
     const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.12 * this.sfxVolume, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    filter.type = 'highpass';
+    filter.frequency.value = 4200;
+    gain.gain.setValueAtTime(0.026, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
     source.connect(filter);
     filter.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    source.start(t);
-    source.stop(t + 0.15);
+    gain.connect(this.musicGain);
+    source.start(startTime);
+    source.stop(startTime + duration);
   }
 
-  /** Âm thanh lau sàn - Mop sound (wet squishy) */
-  public playMop() {
+  private playNotes(
+    notes: number[],
+    stepDuration: number,
+    noteDuration: number,
+    gain: number,
+    type: OscillatorType = 'sine'
+  ) {
     if (!this.audioCtx) return;
+
+    notes.forEach((note, index) => {
+      window.setTimeout(() => {
+        this.playTone({ frequency: note, duration: noteDuration, type, gain, filter: 1800 });
+      }, index * stepDuration * 1000);
+    });
+  }
+
+  private playTone(options: {
+    frequency: number;
+    endFrequency?: number;
+    duration: number;
+    type: OscillatorType;
+    gain: number;
+    filter?: number;
+  }) {
+    if (!this.audioCtx || !this.masterGain) return;
+
     const t = this.audioCtx.currentTime;
     const osc = this.audioCtx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(200, t);
-    osc.frequency.exponentialRampToValueAtTime(80, t + 0.2);
-
     const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.1 * this.sfxVolume, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-
     const filter = this.audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 400;
 
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.2);
-  }
-
-  /** Âm thanh chó sủa - Dog bark sound */
-  public playBark() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-
-    // 2 short barks - 2 tiếng sủa ngắn
-    for (let i = 0; i < 2; i++) {
-      const offset = i * 0.18;
-      const osc = this.audioCtx.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(400, t + offset);
-      osc.frequency.exponentialRampToValueAtTime(250, t + offset + 0.12);
-
-      const gain = this.audioCtx.createGain();
-      gain.gain.setValueAtTime(0.15 * this.sfxVolume, t + offset);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.12);
-
-      const filter = this.audioCtx.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.value = 800;
-      filter.Q.value = 2;
-
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.audioCtx.destination);
-      osc.start(t + offset);
-      osc.stop(t + offset + 0.12);
+    osc.type = options.type;
+    osc.frequency.setValueAtTime(options.frequency, t);
+    if (options.endFrequency && options.endFrequency > 0) {
+      osc.frequency.exponentialRampToValueAtTime(options.endFrequency, t + options.duration);
     }
-  }
 
-  /** Âm thanh chó cắn (hung dữ) - Dog bite/attack sound */
-  public playBite() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-
-    // Tiếng gầm dài hơn - Longer growl
-    const osc = this.audioCtx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(180, t);
-    osc.frequency.linearRampToValueAtTime(350, t + 0.1);
-    osc.frequency.linearRampToValueAtTime(120, t + 0.4);
-
-    const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.2 * this.sfxVolume, t);
-    gain.gain.linearRampToValueAtTime(0.25 * this.sfxVolume, t + 0.15);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-
-    const filter = this.audioCtx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 600;
-    filter.Q.value = 3;
+    filter.frequency.value = options.filter ?? 1200;
+    gain.gain.setValueAtTime(Math.max(0.0001, options.gain * this.sfxVolume), t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + options.duration);
 
     osc.connect(filter);
     filter.connect(gain);
-    gain.connect(this.audioCtx.destination);
+    gain.connect(this.masterGain);
     osc.start(t);
-    osc.stop(t + 0.5);
+    osc.stop(t + options.duration + 0.02);
   }
 
-  /** Âm thanh sạc pin - Charging sound (gentle hum) */
-  public playCharge() {
-    if (!this.audioCtx) return;
+  private playNoise(
+    duration: number,
+    gainValue: number,
+    filterType: BiquadFilterType,
+    filterFrequency: number
+  ) {
+    if (!this.audioCtx || !this.masterGain) return;
+
     const t = this.audioCtx.currentTime;
-    const osc = this.audioCtx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = 440;
-
-    const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.03 * this.sfxVolume, t + 0.1);
-    gain.gain.linearRampToValueAtTime(0.03 * this.sfxVolume, t + 0.3);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-
-    osc.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.5);
-  }
-
-  /** Âm thanh hoàn thành ngày - Day complete jingle */
-  public playDayComplete() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-    const notes = [523, 659, 784, 1047]; // C5, E5, G5, C6 - Hợp âm vui nhộn
-
-    notes.forEach((freq, i) => {
-      const offset = i * 0.12;
-      const osc = this.audioCtx!.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-
-      const gain = this.audioCtx!.createGain();
-      gain.gain.setValueAtTime(0.1 * this.sfxVolume, t + offset);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.3);
-
-      osc.connect(gain);
-      gain.connect(this.audioCtx!.destination);
-      osc.start(t + offset);
-      osc.stop(t + offset + 0.3);
-    });
-  }
-
-  /** Âm thanh sai công cụ - Wrong tool buzz */
-  public playWrongTool() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-    const osc = this.audioCtx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.value = 150;
-
-    const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.06 * this.sfxVolume, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-
-    osc.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.15);
-  }
-
-  /** Âm thanh va chạm tường - Wall collision sound */
-  public playWallHit() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-
-    // Create a thud sound
-    const osc = this.audioCtx.createOscillator();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(150, t);
-    osc.frequency.exponentialRampToValueAtTime(50, t + 0.1);
-
-    const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.15 * this.sfxVolume, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-
+    const source = this.createNoiseSource(duration);
     const filter = this.audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 300;
+    const gain = this.audioCtx.createGain();
 
-    osc.connect(filter);
+    filter.type = filterType;
+    filter.frequency.value = filterFrequency;
+    filter.Q.value = 0.5;
+    gain.gain.setValueAtTime(gainValue * this.sfxVolume, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+
+    source.connect(filter);
     filter.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.15);
+    gain.connect(this.masterGain);
+    source.start(t);
+    source.stop(t + duration);
   }
 
-  /** Âm thanh va chạm với Husky - Husky collision sound */
-  public playHuskyCollision() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
+  private createNoiseSource(duration: number) {
+    if (!this.audioCtx) {
+      throw new Error('Audio context is not initialized');
+    }
 
-    // Impact sound
-    const osc = this.audioCtx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(200, t);
-    osc.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+    const bufferSize = Math.max(1, Math.floor(this.audioCtx.sampleRate * duration));
+    const buffer = this.audioCtx.createBuffer(1, bufferSize, this.audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i += 1) {
+      data[i] = (Math.random() * 2 - 1) * 0.28;
+    }
 
-    const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.2 * this.sfxVolume, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-
-    const filter = this.audioCtx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 400;
-    filter.Q.value = 2;
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.25);
-  }
-
-  /** Âm thanh sạc pin đầy - Battery full sound */
-  public playBatteryFull() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-
-    // Ascending chime
-    const notes = [523, 659, 784]; // C5, E5, G5
-    notes.forEach((freq, i) => {
-      const offset = i * 0.08;
-      const osc = this.audioCtx!.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-
-      const gain = this.audioCtx!.createGain();
-      gain.gain.setValueAtTime(0.08 * this.sfxVolume, t + offset);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.2);
-
-      osc.connect(gain);
-      gain.connect(this.audioCtx!.destination);
-      osc.start(t + offset);
-      osc.stop(t + offset + 0.2);
-    });
-  }
-
-  /** Âm thanh hết pin - Battery low warning */
-  public playBatteryLow() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-
-    // Warning beep
-    const osc = this.audioCtx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(880, t);
-    osc.frequency.setValueAtTime(660, t + 0.1);
-
-    const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.1 * this.sfxVolume, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-
-    osc.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.2);
-  }
-
-  /** Âm thanh game over - Game over sound */
-  public playGameOver() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-
-    // Descending failure sound
-    const notes = [440, 392, 349, 294]; // A4, G4, F4, D4
-    notes.forEach((freq, i) => {
-      const offset = i * 0.15;
-      const osc = this.audioCtx!.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.value = freq;
-
-      const gain = this.audioCtx!.createGain();
-      gain.gain.setValueAtTime(0.12 * this.sfxVolume, t + offset);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.3);
-
-      osc.connect(gain);
-      gain.connect(this.audioCtx!.destination);
-      osc.start(t + offset);
-      osc.stop(t + offset + 0.3);
-    });
-  }
-
-  /** Âm thanh thu thập item - Item collection sound */
-  public playCollectItem() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-
-    const osc = this.audioCtx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, t);
-    osc.frequency.exponentialRampToValueAtTime(1760, t + 0.1);
-
-    const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.1 * this.sfxVolume, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-
-    osc.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.15);
-  }
-
-  /** Âm thanh storage đầy - Storage full warning */
-  public playStorageFull() {
-    if (!this.audioCtx) return;
-    const t = this.audioCtx.currentTime;
-
-    const osc = this.audioCtx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.value = 220;
-
-    const gain = this.audioCtx.createGain();
-    gain.gain.setValueAtTime(0.08 * this.sfxVolume, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-
-    osc.connect(gain);
-    gain.connect(this.audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.2);
+    const source = this.audioCtx.createBufferSource();
+    source.buffer = buffer;
+    return source;
   }
 }

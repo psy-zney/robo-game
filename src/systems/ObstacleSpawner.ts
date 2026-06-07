@@ -1,137 +1,140 @@
 import * as THREE from 'three';
-import { CELL_SIZE, GRID_SIZE } from '../utils/constants';
 import { assetManager } from '../core/AssetManager';
+import {
+  CELL_SIZE,
+  getLevelTuning,
+  GRID_SIZE,
+  SPAWN_CLEAR_RADIUS,
+} from '../utils/constants';
 import { obstacleModels } from '../utils/modelList';
 
 export interface SpawnedObstacle {
   mesh: THREE.Object3D;
   bounds: THREE.Box3;
-  /** Model name used for this obstacle - Tên model của chướng ngại vật */
   modelName: string;
 }
 
-// Realistic target heights (meters) per model - Chiều cao thực tế (đơn vị mét) của từng loại vật
-const MODEL_TARGET_HEIGHT: Record<string, number> = {
-  'Bag': 0.35,           // hand bag ~35cm
-  'Bomb': 0.25,          // small bomb ~25cm
-  'Couch': 0.85,         // sofa height ~85cm
-  'Debris Papers': 0.05, // flat paper ~5cm
-  'Dirty Plate': 0.06,   // plate ~6cm
-  'Knife': 0.04,         // knife blade lying ~4cm
-  'Marsey': 0.40,        // plush toy ~40cm
-  'Simple Suitcase': 0.65, // luggage ~65cm
-  'trah bag grey': 0.40, // trash bag ~40cm
+const MODEL_TARGET_SIZE: Record<string, number> = {
+  Bag: 0.38,
+  Bomb: 0.24,
+  Couch: 1.55,
+  'Debris Papers': 0.42,
+  'Dirty Plate': 0.28,
+  Knife: 0.36,
+  Marsey: 0.38,
+  'Simple Suitcase': 0.70,
+  'trah bag grey': 0.48,
 };
+
+const ROBOT_START = { x: 0.0, z: 0.85 };
+const HUSKY_START = { x: 0.337, z: -1.868 };
 
 export class ObstacleSpawner {
   private readonly modelNames: string[] = obstacleModels;
 
-  constructor() { }
-
-  /**
-   * Generate obstacles for the current day, placed on the correct floor Y level.
-   * Tạo các chướng ngại vật ngẫu nhiên đúng trên mặt sàn thực tế.
-   * @param dayNumber - game day number
-   * @param floorY - world Y of the floor surface from scene bounds
-   * @param sceneBounds - bounding box of the scene to constrain spawn area
-   * @param collidableMeshes - Array of meshes to raycast against
-   */
-  public generateDailyRoom(dayNumber: number, floorY = 0, sceneBounds?: THREE.Box3, collidableMeshes?: THREE.Object3D[]): SpawnedObstacle[] {
-    const obstacleCount = Math.min(5 + Math.floor(dayNumber * 0.7), 14);
-
-    // Use scene bounding box for spawn area if provided, else fall back to grid constants
-    // Dùng bounds của scene thực tế nếu có, nguợc lại dùng hằng số lưới
-    let halfX: number;
-    let halfZ: number;
-    if (sceneBounds && !sceneBounds.isEmpty()) {
-      const size = new THREE.Vector3();
-      sceneBounds.getSize(size);
-      halfX = size.x / 2 * 0.85; // 15% margin from walls - Bờ 15% so với tường
-      halfZ = size.z / 2 * 0.85;
-    } else {
-      halfX = (GRID_SIZE * CELL_SIZE) * 0.9 / 2 - 2.0;
-      halfZ = halfX;
-    }
-
+  public generateDailyRoom(
+    dayNumber: number,
+    floorY = 0,
+    sceneBounds?: THREE.Box3,
+    floorMeshes?: THREE.Object3D[]
+  ): SpawnedObstacle[] {
+    const obstacleCount = getLevelTuning(dayNumber).obstacles;
+    const spawnArea = this.getSpawnArea(sceneBounds);
     const obstacles: SpawnedObstacle[] = [];
+    const raycaster = new THREE.Raycaster();
 
-    for (let index = 0; obstacles.length < obstacleCount && index < obstacleCount * 4; index += 1) {
-      const x = Math.random() * halfX * 2 - halfX;
-      const z = Math.random() * halfZ * 2 - halfZ;
+    for (let attempt = 0; obstacles.length < obstacleCount && attempt < obstacleCount * 12; attempt += 1) {
+      const x = THREE.MathUtils.lerp(spawnArea.minX, spawnArea.maxX, Math.random());
+      const z = THREE.MathUtils.lerp(spawnArea.minZ, spawnArea.maxZ, Math.random());
 
-      // Coordinates of fixed entities - Tọa độ của các thực thể cố định
-      const robotStart = { x: 1.4, z: 31.3 };
-      const huskyStart = { x: 7.5, z: -41.5 };
+      if (!this.isClearOfStarts(x, z)) continue;
+      if (obstacles.some((other) => Math.hypot(other.mesh.position.x - x, other.mesh.position.z - z) < 0.72)) continue;
 
-      // Prevent spawning too close to Robot or Husky - Không sinh chướng ngại vật quá gần Robot hoặc Husky
-      const distToRobot = Math.hypot(x - robotStart.x, z - robotStart.z);
-      const distToHusky = Math.hypot(x - huskyStart.x, z - huskyStart.z);
-      
-      if (distToRobot < 3 || distToHusky < 3) continue;
-
-      if (obstacles.some((other) => Math.hypot(other.mesh.position.x - x, other.mesh.position.z - z) < 1.2)) {
-        continue;
-      }
-
-      const modelName = this.modelNames[index % this.modelNames.length];
-      let mesh: THREE.Object3D | undefined = assetManager.getModel(modelName);
-
+      const modelName = this.modelNames[(attempt + dayNumber) % this.modelNames.length];
+      const mesh = assetManager.getModel(modelName);
       if (!mesh) {
         console.warn(`Obstacle model ${modelName} not found, skipping.`);
         continue;
       }
 
-      // Apply shadows - Tùy chỉnh model bóng râm
-      mesh.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const childMesh = child as THREE.Mesh;
-          childMesh.castShadow = true;
-          childMesh.receiveShadow = true;
-        }
-      });
-
-      // Scale to realistic target height per model type - Scale theo chiều cao thực tế đặc trưng của từng loại vật
-      mesh.scale.setScalar(1.0);
-      mesh.updateMatrixWorld(true);
-      const box0 = new THREE.Box3().setFromObject(mesh);
-      const size0 = new THREE.Vector3();
-      box0.getSize(size0);
-
-      if (modelName === 'Rat') {
-        mesh.scale.setScalar(0.01);
-      } else {
-        const targetH = MODEL_TARGET_HEIGHT[modelName] ?? 0.4;
-        const dominantDim = Math.max(size0.x, size0.y, size0.z);
-        if (dominantDim > 0) {
-          // Scale so the tallest dimension maps to target height - Scale sao cho chiều lớn nhất bằng chiều cao mục tiêu
-          mesh.scale.setScalar(targetH / dominantDim);
-        }
-      }
-
+      this.prepareModel(mesh, modelName);
       mesh.rotation.y = Math.random() * Math.PI * 2;
 
-      // Calculate placement height using raycasting
-      let finalY = floorY;
-      if (collidableMeshes && collidableMeshes.length > 0) {
-        const raycaster = new THREE.Raycaster(new THREE.Vector3(x, 50, z), new THREE.Vector3(0, -1, 0));
-        const intersects = raycaster.intersectObjects(collidableMeshes, true);
-        if (intersects.length > 0) {
-          finalY = intersects[0].point.y;
-        }
-      }
-
-      // Place on actual floor/surface level - Đặt vật trên mặt sàn thực tế
+      const finalY = this.findSurfaceY(x, z, floorY, floorMeshes, raycaster);
       mesh.position.set(x, finalY, z);
       mesh.updateMatrixWorld(true);
-      const boxFinal = new THREE.Box3().setFromObject(mesh);
-      // Shift up so bottom of model sits exactly on the surface
-      mesh.position.y += finalY - boxFinal.min.y;
 
+      const boxBeforeLift = new THREE.Box3().setFromObject(mesh);
+      mesh.position.y += finalY - boxBeforeLift.min.y;
       mesh.updateMatrixWorld(true);
-      const bounds = new THREE.Box3().setFromObject(mesh);
-      obstacles.push({ mesh, bounds, modelName });
+
+      obstacles.push({
+        mesh,
+        bounds: new THREE.Box3().setFromObject(mesh),
+        modelName,
+      });
     }
 
     return obstacles;
+  }
+
+  private getSpawnArea(sceneBounds?: THREE.Box3) {
+    if (sceneBounds && !sceneBounds.isEmpty()) {
+      return {
+        minX: sceneBounds.min.x,
+        maxX: sceneBounds.max.x,
+        minZ: sceneBounds.min.z,
+        maxZ: sceneBounds.max.z,
+      };
+    }
+
+    const half = (GRID_SIZE * CELL_SIZE) * 0.45 - 2.0;
+    return { minX: -half, maxX: half, minZ: -half, maxZ: half };
+  }
+
+  private isClearOfStarts(x: number, z: number) {
+    return (
+      Math.hypot(x - ROBOT_START.x, z - ROBOT_START.z) >= SPAWN_CLEAR_RADIUS &&
+      Math.hypot(x - HUSKY_START.x, z - HUSKY_START.z) >= SPAWN_CLEAR_RADIUS
+    );
+  }
+
+  private prepareModel(mesh: THREE.Object3D, modelName: string) {
+    mesh.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const childMesh = child as THREE.Mesh;
+        childMesh.castShadow = true;
+        childMesh.receiveShadow = true;
+      }
+    });
+
+    mesh.scale.setScalar(1);
+    mesh.updateMatrixWorld(true);
+
+    const box = new THREE.Box3().setFromObject(mesh);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const dominantDim = Math.max(size.x, size.y, size.z);
+    const targetSize = MODEL_TARGET_SIZE[modelName] ?? 0.4;
+
+    if (dominantDim > 0) {
+      mesh.scale.setScalar(targetSize / dominantDim);
+    }
+  }
+
+  private findSurfaceY(
+    x: number,
+    z: number,
+    floorY: number,
+    floorMeshes: THREE.Object3D[] | undefined,
+    raycaster: THREE.Raycaster
+  ) {
+    if (!floorMeshes?.length) return floorY;
+
+    raycaster.set(new THREE.Vector3(x, floorY + 5, z), new THREE.Vector3(0, -1, 0));
+    const intersects = raycaster.intersectObjects(floorMeshes, true);
+    const floorHit = intersects.find((hit) => Math.abs(hit.point.y - floorY) < 0.22);
+
+    return floorHit?.point.y ?? floorY;
   }
 }
