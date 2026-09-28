@@ -1,16 +1,22 @@
 import * as THREE from 'three';
-import { AudioManager } from './AudioManager';
+import { AudioManager, sharedAudioManager } from './AudioManager';
 import { assetManager } from './AssetManager';
+import { createStaticBatch } from './StaticBatch';
 import { InputManager } from './InputManager';
 import { Husky } from '../entities/Husky';
 import { Rat } from '../entities/Rat';
 import { Robot } from '../entities/Robot';
-import { DirtSpawner } from '../systems/DirtSpawner';
+import { DirtSpawner, DIRT_LABELS } from '../systems/DirtSpawner';
 import { DustSpawner } from '../systems/DustSpawner';
 import { GameState } from '../systems/GameState';
+import { MissionSystem } from '../systems/MissionSystem';
+import { NavigationGrid } from '../systems/NavigationGrid';
+import { CollisionWorld } from '../systems/CollisionWorld';
 import { ObstacleSpawner } from '../systems/ObstacleSpawner';
 import { SaveManager } from '../systems/SaveManager';
-import { getDayStory, getDifficultyMultiplier, hasSpecialEvent } from '../systems/StorySystem';
+import { getDayStory, getDifficultyMultiplier, hasSpecialEvent, type DayReport } from '../systems/StorySystem';
+import { settingsStore } from '../systems/SettingsStore';
+import { showDayReport } from '../ui/StoryView';
 import { UIManager } from '../ui/UIManager';
 import {
   BATTERY_DRAIN_MOP,
@@ -24,6 +30,7 @@ import {
   MAX_BATTERY,
   MOP_SPEED,
   MOVE_SPEED,
+  ROBOT_RADIUS,
   SWEEP_SPEED,
   WORLD_MARGIN,
 } from '../utils/constants';
@@ -43,7 +50,7 @@ export class Engine {
   private rat = new Rat();
   private gameState = new GameState();
   private uiManager = new UIManager();
-  private audioManager = new AudioManager();
+  private audioManager: AudioManager;
   private obstacleSpawner = new ObstacleSpawner();
   private dirtSpawner = new DirtSpawner();
   private dustSpawner: DustSpawner;
@@ -52,17 +59,39 @@ export class Engine {
   private previousTime = performance.now();
   private isGameOver = false;
   private isAdvancingDay = false;
+  private isReadingStory = false;
+  private pendingReport?: DayReport;
+  private cameraOcclusionRatio = 1;
   private bumpTimer = 0;
   private bumpDir = new THREE.Vector3();
   private cameraShakeTimer = 0;
   private day = 1;
   private dayIntroTimer = 0;
   private dayMission = '';
+  private mission = new MissionSystem();
+  private navigation = new NavigationGrid();
+  private collisionWorld = new CollisionWorld();
+  private floorWorld = new CollisionWorld();
+  private isPreparingDay = false;
+  private dayGeneration = 0;
+  private accumulator = 0;
+  private hudTimer = 0;
+  private status = 'Ready';
+  private needsRender = true;
+  private huskyHitCooldown = 0;
+  private collisionOrigin = new THREE.Vector3();
+  private collisionDirection = new THREE.Vector3();
+  private collisionSide = new THREE.Vector3();
+  private slidePosition = new THREE.Vector3();
+  private cameraOrigin = new THREE.Vector3();
+  private cameraPosition = new THREE.Vector3();
   private wallHitCooldown = 0;
 
   private chargeStationMesh!: THREE.Mesh;
   private isCharging = false;
   private chargeSoundTimer = 0;
+  private lowBatterySoundTimer = 3.5;
+  private storageFullSoundTimer = 4.5;
 
   private actionCooldown = 0;
   private readonly ACTION_INTERVAL = 0.34;
@@ -75,13 +104,14 @@ export class Engine {
 
   private currentPosition = new THREE.Vector3();
   private raycaster = new THREE.Raycaster();
-  private rayDir = new THREE.Vector3();
+  private movementRaycaster = new THREE.Raycaster();
   private robotSpawn = new THREE.Vector3(ROBOT_SPAWN_HINT.x, 0, ROBOT_SPAWN_HINT.z);
   private huskySpawn = new THREE.Vector3(HUSKY_SPAWN.x, 0, HUSKY_SPAWN.z);
   private chargeStationPosition = new THREE.Vector3(ROBOT_SPAWN_HINT.x, 0, ROBOT_SPAWN_HINT.z);
 
   private collidableMeshes: THREE.Object3D[] = [];
   private floorMeshes: THREE.Object3D[] = [];
+  private ignoredEnvironmentNodes: string[] = [];
   private obstacleMeshes: THREE.Object3D[] = [];
   private playableBounds = new THREE.Box3(
     new THREE.Vector3(-3.5, 0, -3.5),
@@ -89,25 +119,41 @@ export class Engine {
   );
   public houseBounds = new THREE.Box3();
 
-  constructor(options?: { startDay?: number; startBattery?: number }) {
-    this.scene.background = new THREE.Color(0x20242b);
+  constructor(options?: { startDay?: number; startBattery?: number; audioManager?: AudioManager; pendingReport?: DayReport }) {
+    this.audioManager = options?.audioManager ?? sharedAudioManager;
+    this.scene.background = new THREE.Color(0xc3beb0);
     this.camera = this.robot.camera;
     this.audioManager.initOnUserGesture();
 
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.setupRenderer();
     this.setupLights();
 
     this.day = Math.max(1, Math.floor(options?.startDay ?? 1));
-    this.gameState.init(100);
+    this.pendingReport = options?.pendingReport;
+    this.isReadingStory = !!this.pendingReport;
+    this.gameState.init(0);
     this.gameState.day = this.day;
     this.gameState.battery = Math.max(0, Math.min(MAX_BATTERY, options?.startBattery ?? MAX_BATTERY));
 
     this.dustSpawner = new DustSpawner(this.scene);
-    this.audioManager.startMusic();
+    if (settingsStore.get().music) this.audioManager.startMusic();
     this.setupScene();
+    if (this.pendingReport) showDayReport(this.pendingReport);
+    settingsStore.subscribe(settings => {
+      this.robot.applySettings(settings);
+      this.dirtSpawner.highlightSpot(null, settings.outlines, this.robot.group.position);
+      this.needsRender = true;
+      this.updateHud(this.status);
+    });
+    window.addEventListener('wheel', event => {
+      if (!this.input.state.isLocked || this.isReadingStory || document.querySelector('dialog[open]')) return;
+      event.preventDefault();
+      this.robot.zoomCamera(event.deltaY);
+      this.needsRender = true;
+    }, { passive: false });
 
     this.updateHud('Ready');
     window.addEventListener('resize', this.onResize);
@@ -122,7 +168,7 @@ export class Engine {
   }
 
   private setupLights() {
-    const ambientLight = new THREE.AmbientLight(0xf2f6ff, 0.78);
+    const ambientLight = new THREE.AmbientLight(0xf4eedf, 0.78);
     this.scene.add(ambientLight);
 
     const dirLight = new THREE.DirectionalLight(0xf6f1e8, 0.72);
@@ -147,14 +193,39 @@ export class Engine {
         }
       });
 
+      // Derive the playable footprint from the house floor, before considering
+      // decorations. The source includes a stray window ~38km from the house.
+      homeModel.updateMatrixWorld(true);
+      const floorBounds = new THREE.Box3();
+      homeModel.traverse(child => {
+        if (/floor/i.test(child.name)) floorBounds.union(new THREE.Box3().setFromObject(child));
+      });
+      if (!floorBounds.isEmpty()) {
+        const houseEnvelope = floorBounds.clone().expandByScalar(2);
+        const outliers: THREE.Object3D[] = [];
+        homeModel.traverse(child => {
+          if ((child as THREE.Mesh).isMesh && !houseEnvelope.intersectsBox(new THREE.Box3().setFromObject(child))) outliers.push(child);
+        });
+        for (const outlier of outliers) {
+          this.ignoredEnvironmentNodes.push(outlier.name);
+          outlier.removeFromParent();
+        }
+      }
+
       this.floorMeshes.push(homeModel);
       this.collidableMeshes.push(homeModel);
       this.scene.add(homeModel);
 
       homeModel.updateMatrixWorld(true);
-      this.houseBounds.setFromObject(homeModel);
+      if (!floorBounds.isEmpty()) this.houseBounds.copy(floorBounds);
+      else this.houseBounds.setFromObject(homeModel);
       this.floorY = this.detectFloorY(homeModel);
       this.playableBounds = this.createPlayableBounds(this.houseBounds, this.floorY);
+      this.floorWorld.rebuild(this.floorMeshes);
+      const renderHouse = createStaticBatch(homeModel);
+      homeModel.visible = false;
+      this.scene.add(renderHouse);
+      this.collisionWorld.rebuild(this.collidableMeshes);
     }
 
     this.resolveSpawnPoints();
@@ -177,22 +248,6 @@ export class Engine {
     this.scene.add(this.dirtSpawner.group);
     void this.spawnDirtForDay(this.day);
 
-    document.getElementById('reset-btn')?.addEventListener('click', () => {
-      this.robot.spawn(this.robotSpawn.x, this.robotSpawn.y, this.robotSpawn.z);
-      this.husky.spawn(this.huskySpawn.x, this.huskySpawn.y, this.huskySpawn.z);
-      this.husky.setBounds(this.playableBounds);
-      this.isGameOver = false;
-      this.gameState.battery = MAX_BATTERY;
-      this.spawnObstaclesForDay(this.day);
-      void this.spawnDirtForDay(this.day);
-      this.updateHud('Game Reset');
-    });
-
-    const musicBtn = document.getElementById('music-btn');
-    musicBtn?.addEventListener('click', () => {
-      this.toggleMusic();
-      musicBtn.textContent = this.audioManager.isMusicPlaying() ? 'MUSIC ON' : 'MUSIC OFF';
-    });
   }
 
   private detectFloorY(homeModel: THREE.Object3D): number {
@@ -249,6 +304,22 @@ export class Engine {
   private resolveSpawnPoints() {
     const cornerCandidates = this.getCornerSpawnCandidates();
     this.robotSpawn.copy(this.resolveSpawnPoint(cornerCandidates[0], cornerCandidates.slice(1)));
+    const nav = new NavigationGrid();
+    let bestReachableCount = 0;
+    const center = this.playableBounds.getCenter(new THREE.Vector3());
+    const candidates = [this.robotSpawn, ...this.createSpawnGridCandidates(center).map(candidate => new THREE.Vector3(candidate.x, this.floorY, candidate.z))];
+    for (const candidate of candidates) {
+      const y = this.getGroundYAt(candidate.x, candidate.z, this.floorY + 1);
+      if (y === undefined || !this.hasSpawnClearance(candidate.x, y, candidate.z)) continue;
+      candidate.y = y;
+      nav.build(candidate, this.playableBounds,
+        (x, z) => this.getGroundYAt(x, z, this.floorY + 1),
+        (from, to) => this.canTravel(from, to));
+      if (nav.points.length > bestReachableCount) {
+        bestReachableCount = nav.points.length;
+        this.robotSpawn.copy(candidate);
+      }
+    }
 
     this.huskySpawn.copy(this.resolveSpawnPoint(HUSKY_SPAWN, [
       { x: -0.9, z: -1.15 },
@@ -393,7 +464,8 @@ export class Engine {
       day,
       this.floorY,
       this.playableBounds,
-      this.floorMeshes
+      this.floorMeshes,
+      [this.robotSpawn, this.huskySpawn, this.rat.group.position, this.robot.group.position]
     );
 
     for (const obs of spawnedObstacles) {
@@ -401,6 +473,7 @@ export class Engine {
       this.collidableMeshes.push(obs.mesh);
       this.obstacleMeshes.push(obs.mesh);
     }
+    this.collisionWorld.rebuild(this.collidableMeshes);
   }
 
   private removeCollidable(mesh: THREE.Object3D) {
@@ -413,11 +486,11 @@ export class Engine {
   private createChargeStation() {
     const geo = new THREE.RingGeometry(0.24, CHARGE_RADIUS, 40);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x4bf0b0,
-      emissive: 0x24d68e,
-      emissiveIntensity: 0.55,
+      color: 0x829265,
+      emissive: 0x3b4530,
+      emissiveIntensity: 0.12,
       transparent: true,
-      opacity: 0.62,
+      opacity: 0.48,
       side: THREE.DoubleSide,
     });
     this.chargeStationMesh = new THREE.Mesh(geo, mat);
@@ -427,43 +500,89 @@ export class Engine {
   }
 
   private async spawnDirtForDay(day: number) {
+    const generation = ++this.dayGeneration;
+    this.isPreparingDay = true;
+    const nextButton = document.getElementById('next-day-btn') as HTMLButtonElement | null;
+    if (nextButton) nextButton.disabled = true;
+    this.mission.reset();
+    this.gameState.totalCells = 0;
+    this.gameState.cleanedCells = 0;
+    this.gameState.emptyStorage();
+    this.dustSpawner.clearAll();
+    this.actionCooldown = 0;
+    this.updateHud('Preparing room...');
     const story = getDayStory(day);
     this.dayMission = story.mission;
     this.dayIntroTimer = 3.5;
 
     if (hasSpecialEvent(day, 'reduced_battery')) {
-      this.gameState.battery = Math.max(20, this.gameState.battery * 0.7);
+      this.gameState.battery = Math.min(this.gameState.battery, MAX_BATTERY * 0.7);
     }
-
-    await this.dirtSpawner.spawnForDay(day, this.floorY, this.floorMeshes, story.dirtWeights, this.playableBounds);
-    this.dustSpawner.spawnForDay(day, this.floorY, story.dustColor, this.playableBounds);
-
-    this.gameState.totalCells = this.dirtSpawner.getTotalCount();
-    this.gameState.cleanedCells = 0;
-    this.saveProgress();
+    try {
+      this.navigation.build(this.robotSpawn, this.playableBounds,
+        (x, z) => this.getGroundYAt(x, z, this.floorY + 1),
+        (from, to) => this.canTravel(from, to));
+      await this.dirtSpawner.spawnForDay(day, this.floorY, this.floorMeshes, story.dirtWeights, this.playableBounds, this.navigation.points, this.chargeStationPosition);
+      if (generation !== this.dayGeneration) return;
+      const dustPoints = this.navigation.points.filter(point => point.distanceTo(this.chargeStationPosition) > CHARGE_RADIUS + 0.15);
+      this.dustSpawner.spawnForDay(day, this.floorY, story.dustColor, this.playableBounds, dustPoints);
+      this.gameState.totalCells = this.dirtSpawner.getTotalCount();
+      this.mission.begin(this.gameState.totalCells, this.dustSpawner.getTotalCount());
+      this.isPreparingDay = false;
+      if (nextButton) nextButton.disabled = false;
+      this.needsRender = true;
+      if (this.mission.phase === 'loading') {
+        this.triggerGameOver('No reachable cleaning area. Restart the day to rebuild the room.');
+        return;
+      }
+      this.saveProgress();
+      const facingPoint = this.navigation.points.reduce((best, point) => point.distanceToSquared(this.robotSpawn) > best.distanceToSquared(this.robotSpawn) ? point : best, this.robotSpawn);
+      this.robot.cameraGroup.rotation.y = Math.atan2(this.robotSpawn.x - facingPoint.x, this.robotSpawn.z - facingPoint.z);
+      this.updateHud('Ready');
+      this.uiManager.updateActionPrompt(false, false);
+    } catch (error) {
+      if (generation !== this.dayGeneration) return;
+      this.isPreparingDay = false;
+      if (nextButton) nextButton.disabled = false;
+      console.error('Could not prepare day:', error);
+      this.triggerGameOver('Room preparation failed. Restart the day.');
+    }
   }
 
-  private saveProgress() {
+  private saveProgress(completedDay?: number) {
     const existing = SaveManager.load();
     const highestDay = Math.max(existing?.highestDay ?? 1, this.day);
     SaveManager.save({
       battery: this.gameState.battery,
       cleanedCount: this.gameState.cleanedCells,
       day: this.day,
-      money: 0,
+      money: this.gameState.money,
       highestDay,
       version: '1.0.0',
       timestamp: Date.now(),
       playtime: 0,
+      completedDays: [...new Set([...(existing?.completedDays ?? []), ...(completedDay === undefined ? [] : [completedDay])])],
+      pendingReport: this.pendingReport,
     });
   }
 
   public restartDay() {
+    if (this.isAdvancingDay) return;
     this.isGameOver = false;
+    this.isReadingStory = false;
+    this.pendingReport = undefined;
+    document.getElementById('story-screen')?.classList.remove('active');
+    document.getElementById('game-over-screen')?.classList.remove('active');
+    this.input.reset();
+    this.bumpTimer = this.cameraShakeTimer = this.huskyHitCooldown = this.wallHitCooldown = 0;
+    this.huskyRandomTimer = 0;
+    this.accumulator = 0;
+    this.robot.cameraGroup.position.set(0, 0, 0);
     this.gameState.battery = MAX_BATTERY;
     this.robot.spawn(this.robotSpawn.x, this.robotSpawn.y, this.robotSpawn.z);
     this.husky.spawn(this.huskySpawn.x, this.huskySpawn.y, this.huskySpawn.z);
     this.husky.setBounds(this.playableBounds);
+    this.rat.spawn(this.robotSpawn.x, this.robotSpawn.y, this.robotSpawn.z + 0.4);
     this.spawnObstaclesForDay(this.day);
     void this.spawnDirtForDay(this.day);
     this.updateHud(`Restarting Day ${this.day}`);
@@ -481,17 +600,31 @@ export class Engine {
     this.audioManager.toggleMusic();
   }
 
+  public getAudioManager(): AudioManager {
+    return this.audioManager;
+  }
+
+  public resetCamera() {
+    const yaw = this.robot.cameraGroup.rotation.y;
+    this.robot.resetCameraView();
+    this.robot.cameraGroup.rotation.y = yaw;
+    this.cameraOcclusionRatio = 1;
+    this.needsRender = true;
+    this.updateHud(this.status);
+  }
+
   private onResize = () => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.needsRender = true;
   };
 
   private updateHud(status: string) {
     const story = getDayStory(this.day);
     const difficultyMultiplier = getDifficultyMultiplier(this.day);
     const cameraSettings = this.robot.getCameraSettings();
-    const cameraSettingsText = `H: ${(cameraSettings.height * 100).toFixed(0)}cm | FOV: ${cameraSettings.fov.toFixed(0)}deg`;
+    const cameraSettingsText = `Cuộn: zoom · C: đổi cam · ${cameraSettings.fov.toFixed(0)}°`;
 
     this.uiManager.update(
       this.gameState.battery,
@@ -506,31 +639,60 @@ export class Engine {
       cameraSettingsText,
       story.title
     );
+    this.uiManager.updateObjectives(this.mission.objectiveText);
+    const dx = this.chargeStationPosition.x - this.robot.group.position.x;
+    const dz = this.chargeStationPosition.z - this.robot.group.position.z;
+    this.uiManager.updateDockHint(Math.hypot(dx, dz), Math.atan2(dx, -dz) + this.robot.cameraGroup.rotation.y);
   }
 
   private animate = () => {
     requestAnimationFrame(this.animate);
-
     const currentTime = performance.now();
-    const deltaTime = Math.min(0.033, (currentTime - this.previousTime) / 1000);
+    const elapsed = Math.min(0.1, (currentTime - this.previousTime) / 1000);
     this.previousTime = currentTime;
-    this.wallHitCooldown = Math.max(0, this.wallHitCooldown - deltaTime);
-
-    if (this.isGameOver) {
-      this.renderer.render(this.scene, this.camera);
-      return;
-    }
-
     const pauseScreen = document.getElementById('pause-screen');
-    if (!this.input.state.isLocked) {
-      pauseScreen?.classList.add('active');
+    const dialogOpen = !!document.querySelector('dialog[open]');
+    const paused = !this.input.state.isLocked || dialogOpen || this.isReadingStory;
+    const showPause = paused && !this.isGameOver && !this.isReadingStory && !dialogOpen && !this.isPreparingDay && !this.isAdvancingDay;
+    const wasPaused = pauseScreen?.classList.contains('active');
+    pauseScreen?.classList.toggle('active', showPause);
+    if (showPause && !wasPaused) document.getElementById('resume-btn')?.focus({ preventScroll: true });
+    const hud = document.getElementById('game-ui');
+    if (hud) hud.inert = paused || this.isGameOver || this.isPreparingDay || this.isAdvancingDay;
+    if (paused || this.isGameOver || this.isPreparingDay || this.isAdvancingDay) {
+      this.accumulator = 0;
+      this.robot.stopMovement();
       this.audioManager.setMovement(false);
-      this.renderer.render(this.scene, this.camera);
+      if (this.needsRender) {
+        this.updateCameraOcclusion();
+        this.renderer.render(this.scene, this.camera);
+        this.needsRender = false;
+      }
       return;
     }
+    this.accumulator += elapsed;
+    this.needsRender = true;
+    const step = 1 / 60;
+    while (this.accumulator >= step) {
+      this.status = this.updateGame(step, currentTime);
+      this.accumulator -= step;
+      if (this.isGameOver || this.isPreparingDay || this.isAdvancingDay || this.isReadingStory) {
+        this.accumulator = 0;
+        break;
+      }
+    }
+    this.hudTimer += elapsed;
+    if (this.hudTimer >= 0.1) {
+      this.hudTimer = 0;
+      this.updateHud(this.status);
+    }
+    this.renderer.render(this.scene, this.camera);
+  };
 
-    pauseScreen?.classList.remove('active');
-
+  private updateGame(deltaTime: number, currentTime: number): string {
+    if (this.isReadingStory || this.isGameOver || document.querySelector('dialog[open]')) return this.status;
+    this.wallHitCooldown = Math.max(0, this.wallHitCooldown - deltaTime);
+    this.huskyHitCooldown = Math.max(0, this.huskyHitCooldown - deltaTime);
     const isPlayerInputMoving = this.input.state.forward || this.input.state.backward || this.input.state.left || this.input.state.right;
     const isCleaning = this.input.state.suction || this.input.state.mop;
 
@@ -541,14 +703,14 @@ export class Engine {
       deltaTime,
       (origin, dir, dist) => {
         this.raycaster.set(origin, dir);
-        const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
+        const intersects = this.raycaster.intersectObjects(this.collisionWorld.along(origin, dir, dist), false);
         return intersects.length > 0 && intersects[0].distance < dist;
       },
       (from, to) => {
         const dir = new THREE.Vector3().subVectors(to, from).normalize();
         const dist = from.distanceTo(to);
         this.raycaster.set(from, dir);
-        const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
+        const intersects = this.raycaster.intersectObjects(this.collisionWorld.along(from, dir, dist), false);
         return intersects.length > 0 && intersects[0].distance < dist;
       },
       this.currentPosition,
@@ -557,7 +719,7 @@ export class Engine {
       (x, z, fromY) => this.getGroundYAt(x, z, fromY)
     );
 
-    this.rat.update(deltaTime);
+    this.rat.update(deltaTime, (from, to) => this.canTravel(from, to, 0.06), (x, z) => this.getGroundYAt(x, z, this.floorY + 1));
     this.dustSpawner.update(deltaTime);
     this.handleRandomHuskyBite(deltaTime);
 
@@ -571,46 +733,79 @@ export class Engine {
     }
 
     const targetPosition = this.robot.update(deltaTime, this.input.state, currentSpeed);
-    const isMoving = !this.currentPosition.equals(targetPosition);
+    const isMoving = this.currentPosition.distanceToSquared(targetPosition) > 1e-8;
     let hitWall = this.checkMovementCollision(targetPosition, isMoving);
+    if (hitWall && isMoving) {
+      this.slidePosition.set(targetPosition.x, this.currentPosition.y, this.currentPosition.z);
+      if (this.slidePosition.distanceToSquared(this.currentPosition) > 1e-8 && this.canTravel(this.currentPosition, this.slidePosition)) {
+        targetPosition.copy(this.slidePosition);
+        hitWall = false;
+      } else {
+        this.slidePosition.set(this.currentPosition.x, this.currentPosition.y, targetPosition.z);
+        if (this.slidePosition.distanceToSquared(this.currentPosition) > 1e-8 && this.canTravel(this.currentPosition, this.slidePosition)) {
+          targetPosition.copy(this.slidePosition);
+          hitWall = false;
+        }
+      }
+    }
     let hitHusky = false;
 
     const huskyPos = this.husky.group.position;
-    const huskyDist = Math.min(this.currentPosition.distanceTo(huskyPos), targetPosition.distanceTo(huskyPos));
+    const currentHuskyDist = this.currentPosition.distanceTo(huskyPos);
+    const targetHuskyDist = targetPosition.distanceTo(huskyPos);
+    const huskyDist = Math.min(currentHuskyDist, targetHuskyDist);
     if (huskyDist < 0.30) {
-      hitHusky = true;
-      hitWall = true;
-      this.gameState.battery = Math.max(0, this.gameState.battery - 10);
-      this.bumpTimer = 0.5;
-      this.cameraShakeTimer = 0.25;
-      this.bumpDir.copy(this.currentPosition).sub(huskyPos);
-      this.bumpDir.y = 0;
-      if (this.bumpDir.lengthSq() < 1e-6) {
-        this.bumpDir.set(0, 0, 1);
-      } else {
-        this.bumpDir.normalize();
-      }
-      if (this.husky.state === 'chase' || Math.random() >= HUSKY_BARK_CHANCE) {
-        this.audioManager.playBite();
-      } else {
-        this.audioManager.playBark();
+      hitHusky = targetHuskyDist < 0.30 && targetHuskyDist <= currentHuskyDist + 1e-6;
+      if (hitHusky) hitWall = true;
+      if (this.huskyHitCooldown <= 0 && this.currentPosition.distanceTo(this.chargeStationPosition) > CHARGE_RADIUS) {
+        this.huskyHitCooldown = 1.5;
+        this.gameState.battery = Math.max(0, this.gameState.battery - 10);
+        this.bumpTimer = 0.28;
+        this.cameraShakeTimer = 0.25;
+        this.bumpDir.copy(this.currentPosition).sub(huskyPos).setY(0);
+        if (this.bumpDir.lengthSq() < 1e-6) this.bumpDir.set(0, 0, 1);
+        else this.bumpDir.normalize();
+        if (this.husky.state === 'chase' || Math.random() >= HUSKY_BARK_CHANCE) this.audioManager.playBite();
+        else this.audioManager.playBark();
+        this.audioManager.playHuskyCollision();
+        this.husky.onContact();
       }
     }
+
+    if (this.bumpTimer > 0) {
+      this.bumpTimer = Math.max(0, this.bumpTimer - deltaTime);
+      this.slidePosition.copy(this.currentPosition).addScaledVector(this.bumpDir, 0.9 * deltaTime);
+      if (this.canTravel(this.currentPosition, this.slidePosition)) this.robot.group.position.copy(this.slidePosition);
+      this.robot.stopMovement();
+    } else if (!hitWall && isMoving && this.gameState.battery > 0) {
+      this.robot.group.position.copy(targetPosition);
+      this.robot.group.position.y = this.getGroundYAt(targetPosition.x, targetPosition.z, this.floorY + 1) ?? this.floorY;
+    } else if (hitWall) this.robot.stopMovement();
+    const actualSpeed = this.robot.group.position.distanceTo(this.currentPosition) / deltaTime;
+    const actuallyMoving = actualSpeed > 0.02;
+    this.audioManager.setMovement(actuallyMoving && this.bumpTimer <= 0);
+    this.robot.getPosition(this.currentPosition);
 
     const distToCharger = Math.hypot(
       this.currentPosition.x - this.chargeStationPosition.x,
       this.currentPosition.z - this.chargeStationPosition.z
     );
-    this.isCharging = distToCharger < CHARGE_RADIUS && this.gameState.battery < MAX_BATTERY;
+    const docked = distToCharger < CHARGE_RADIUS && !actuallyMoving && !isCleaning && this.bumpTimer <= 0;
+    this.isCharging = docked && this.gameState.battery < MAX_BATTERY;
+    if (docked) this.gameState.emptyStorage();
 
     if (this.isCharging) {
+      const prevBattery = this.gameState.battery;
       this.gameState.battery = Math.min(MAX_BATTERY, this.gameState.battery + CHARGE_RATE * deltaTime);
+      if (prevBattery < MAX_BATTERY && this.gameState.battery >= MAX_BATTERY) {
+        this.audioManager.playBatteryFull();
+      }
       this.chargeSoundTimer += deltaTime;
       if (this.chargeSoundTimer >= 1.5) {
         this.chargeSoundTimer = 0;
         this.audioManager.playCharge();
       }
-      const pulse = 0.46 + Math.sin(currentTime * 0.005) * 0.22;
+      const pulse = settingsStore.get().reducedMotion ? .48 : .46 + Math.sin(currentTime * 0.003) * .07;
       (this.chargeStationMesh.material as THREE.MeshStandardMaterial).opacity = pulse;
     }
 
@@ -631,56 +826,69 @@ export class Engine {
     } else if (this.input.state.mop) {
       drainRate = BATTERY_DRAIN_MOP;
       status = 'Mopping...';
-    } else if (isMoving) {
+    } else if (actuallyMoving) {
       drainRate = BATTERY_DRAIN_MOVE;
       status = 'Moving...';
     }
 
     if (drainRate > 0) {
       this.gameState.battery = Math.max(0, this.gameState.battery - drainRate * deltaTime);
-      if (Math.random() < 0.02) this.saveProgress();
     }
 
     if (this.gameState.battery <= 0 && !this.isCharging) {
       this.triggerGameOver('Out of battery. Robot failed to return to base.');
-      return;
+      return 'Out of battery.';
     }
 
-    status = this.handleCleaning(deltaTime, status);
+    if (this.bumpTimer <= 0) status = this.handleCleaning(deltaTime, status);
+    else status = 'Recovering...';
+    this.mission.update(this.gameState.cleanedCells, this.dustSpawner.getTotalCount() - this.dustSpawner.getActiveCount(), docked);
 
-    if (!this.isAdvancingDay && this.dirtSpawner.isAllCleaned() && this.gameState.totalCells > 0) {
-      status = `Day ${this.day} complete. Loading next level.`;
-      void this.advanceDay();
+    if (!this.isAdvancingDay && this.mission.phase === 'complete') {
+      status = 'Ca dọn hoàn thành · Nhật ký đã mở.';
+      this.completeDay();
     }
 
-    if (this.bumpTimer > 0) {
-      this.bumpTimer = Math.max(0, this.bumpTimer - deltaTime);
-      status = 'Recovering...';
-      this.robot.group.position.addScaledVector(this.bumpDir, 0.9 * deltaTime);
-    } else if (hitWall && isMoving) {
-      this.audioManager.setMovement(false);
+    if (hitWall && isMoving && this.bumpTimer <= 0) {
       status = hitHusky ? 'Husky in the way!' : 'Obstacle detected.';
       if (!hitHusky && this.wallHitCooldown <= 0) {
         this.audioManager.playWallHit();
         this.wallHitCooldown = 0.45;
       }
-    } else if (isMoving && this.gameState.battery > 0) {
-      this.robot.group.position.copy(targetPosition);
-      this.audioManager.setMovement(true);
+    }
+    if (this.gameState.isStorageFull() && !docked) {
+      status = 'Storage full. Return to the green dock.';
+      this.storageFullSoundTimer += deltaTime;
+      if (this.storageFullSoundTimer >= 4.5) {
+        this.storageFullSoundTimer = 0;
+        this.audioManager.playStorageFull();
+      }
     } else {
-      this.audioManager.setMovement(false);
+      this.storageFullSoundTimer = 4.0;
     }
 
+    if (this.mission.phase === 'returning') {
+      status = 'Room clean. Return to the green dock.';
+    } else if (this.gameState.battery < 20 && !this.isCharging && !isCleaning) {
+      status = 'Low battery. Return to the green dock.';
+      this.lowBatterySoundTimer += deltaTime;
+      if (this.lowBatterySoundTimer >= 4.0) {
+        this.lowBatterySoundTimer = 0;
+        this.audioManager.playBatteryLow();
+      }
+    } else {
+      this.lowBatterySoundTimer = 3.5;
+    }
+    this.robot.animate(deltaTime, actualSpeed, this.bumpTimer > 0 ? null : this.input.state.suction ? 'sweep' : this.input.state.mop ? 'mop' : null);
     this.applyCameraShake(deltaTime);
     this.updateCameraOcclusion();
-    this.updateHud(status);
-    this.renderer.render(this.scene, this.camera);
-  };
+    return status;
+  }
 
   private updateCameraOcclusion() {
     this.robot.resetCameraBoomDistance();
-    const desiredCameraPosition = this.camera.getWorldPosition(new THREE.Vector3());
-    const origin = this.robot.group.position.clone();
+    const desiredCameraPosition = this.camera.getWorldPosition(this.cameraPosition);
+    const origin = this.cameraOrigin.copy(this.robot.group.position);
     origin.y += 0.18;
 
     const toCamera = desiredCameraPosition.sub(origin);
@@ -691,23 +899,20 @@ export class Engine {
     }
 
     this.raycaster.set(origin, toCamera.normalize());
-    const hits = this.raycaster.intersectObjects(this.collidableMeshes, true);
+    const hits = this.raycaster.intersectObjects(this.collisionWorld.along(origin, toCamera, desiredDistance), false);
     const blockingHit = hits.find((hit) => hit.distance > 0.08 && hit.distance < desiredDistance - 0.05);
 
-    if (!blockingHit) {
-      this.robot.resetCameraBoomDistance();
-      return;
-    }
-
-    const safeRatio = Math.max(0.35, (blockingHit.distance - 0.12) / desiredDistance);
-    this.robot.setCameraBoomDistance(this.robot.getDefaultCameraBoomDistance() * safeRatio);
+    const safeRatio = blockingHit ? Math.max(0.08, (blockingHit.distance - 0.08) / desiredDistance) : 1;
+    // Pull inward immediately to avoid clipping; ease outward when space clears.
+    this.cameraOcclusionRatio = safeRatio < this.cameraOcclusionRatio ? safeRatio : THREE.MathUtils.damp(this.cameraOcclusionRatio, safeRatio, 7, 1 / 60);
+    this.robot.setCameraBoomDistance(this.robot.getDefaultCameraBoomDistance() * this.cameraOcclusionRatio);
   }
 
   private getGroundYAt(x: number, z: number, fromY: number): number | undefined {
     if (!this.floorMeshes.length) return undefined;
 
     this.raycaster.set(new THREE.Vector3(x, fromY, z), new THREE.Vector3(0, -1, 0));
-    const hits = this.raycaster.intersectObjects(this.floorMeshes, true);
+    const hits = this.raycaster.intersectObjects(this.floorWorld.at(x, z), false);
     const hit = hits.find((entry) => Math.abs(entry.point.y - this.floorY) < 0.18);
 
     return hit?.point.y;
@@ -730,58 +935,72 @@ export class Engine {
 
   private checkMovementCollision(targetPosition: THREE.Vector3, isMoving: boolean): boolean {
     if (!isMoving) return false;
+    return !this.canTravel(this.currentPosition, targetPosition);
+  }
 
-    this.rayDir.copy(targetPosition).sub(this.currentPosition);
-    const dist = this.rayDir.length();
-    if (dist <= 0) return false;
-
-    this.rayDir.normalize();
-    const stopDist = 0.13;
-    const raySpread = 0.14;
-    const left = new THREE.Vector3(-this.rayDir.z, 0, this.rayDir.x);
-    const right = new THREE.Vector3(this.rayDir.z, 0, -this.rayDir.x);
-    const origins = [
-      this.currentPosition,
-      this.currentPosition.clone().addScaledVector(left, raySpread),
-      this.currentPosition.clone().addScaledVector(right, raySpread),
-      this.currentPosition.clone().addScaledVector(left, raySpread * 0.5),
-      this.currentPosition.clone().addScaledVector(right, raySpread * 0.5),
-    ];
-
-    for (const origin of origins) {
-      const rayOrigin = origin.clone();
-      rayOrigin.y += 0.1;
-      this.raycaster.set(rayOrigin, this.rayDir);
-      const intersects = this.raycaster.intersectObjects(this.collidableMeshes, true);
-      if (intersects.length > 0 && intersects[0].distance < dist + stopDist) {
-        return true;
+  private canTravel(from: THREE.Vector3, to: THREE.Vector3, radius = ROBOT_RADIUS): boolean {
+    if (to.x < this.playableBounds.min.x + radius || to.x > this.playableBounds.max.x - radius || to.z < this.playableBounds.min.z + radius || to.z > this.playableBounds.max.z - radius) return false;
+    if (this.floorMeshes.length && this.getGroundYAt(to.x, to.z, this.floorY + 1) === undefined) return false;
+    this.collisionDirection.subVectors(to, from).setY(0);
+    const distance = this.collisionDirection.length();
+    if (distance < 1e-6) return true;
+    this.collisionDirection.divideScalar(distance);
+    this.collisionSide.set(-this.collisionDirection.z, 0, this.collisionDirection.x);
+    this.movementRaycaster.far = distance + radius;
+    for (const height of [0.065, 0.13]) {
+      for (const offset of [-radius, 0, radius]) {
+        this.collisionOrigin.copy(from).addScaledVector(this.collisionSide, offset);
+        this.collisionOrigin.y += height;
+        this.movementRaycaster.set(this.collisionOrigin, this.collisionDirection);
+        if (this.movementRaycaster.intersectObjects(this.collisionWorld.along(this.collisionOrigin, this.collisionDirection, distance + radius), false).length) return false;
       }
     }
+    return true;
+  }
 
-    return false;
+  private canInteract(point: THREE.Vector3): boolean {
+    this.collisionOrigin.copy(this.currentPosition);
+    this.collisionOrigin.y += 0.1;
+    this.collisionDirection.set(point.x - this.currentPosition.x, 0, point.z - this.currentPosition.z);
+    const distance = this.collisionDirection.length();
+    if (distance < 0.01) return true;
+    this.collisionDirection.divideScalar(distance);
+    this.movementRaycaster.far = distance;
+    this.movementRaycaster.set(this.collisionOrigin, this.collisionDirection);
+    return this.movementRaycaster.intersectObjects(this.collisionWorld.along(this.collisionOrigin, this.collisionDirection, distance), false).length === 0;
   }
 
   private handleCleaning(deltaTime: number, currentStatus: string): string {
     this.actionCooldown = Math.max(0, this.actionCooldown - deltaTime);
-    this.uiManager.updateActionPrompt(this.input.state.suction, this.input.state.mop);
+    const isSweeping = this.input.state.suction;
+    const step = isSweeping ? 'needs_sweep' : this.input.state.mop ? 'needs_mop' : undefined;
+    const canInteract = (spot: { mesh: THREE.Mesh }) => this.canInteract(spot.mesh.position);
+    const nearestDirt = this.dirtSpawner.findNearestSpot(this.currentPosition, canInteract, step)
+      ?? this.dirtSpawner.findNearestSpot(this.currentPosition, canInteract);
+    const hint = nearestDirt ? `${DIRT_LABELS[nearestDirt.config.name] ?? nearestDirt.config.name} · Giữ ${nearestDirt.currentStep === 'needs_sweep' ? 'E hút' : 'R lau'} · ${nearestDirt.remainingActions} lượt` : undefined;
+    this.dirtSpawner.highlightSpot(nearestDirt, settingsStore.get().outlines, this.currentPosition);
+    this.uiManager.updateTargetProgress(nearestDirt ? 1 - nearestDirt.remainingActions / nearestDirt.config.requiredActions : 0);
+    this.uiManager.updateActionPrompt(isSweeping, this.input.state.mop, this.gameState.isStorageFull() && !this.input.state.mop ? 'Hộp đầy · Về trạm đổ bụi' : this.mission.phase === 'returning' ? 'Nhà sạch · Về trạm hoàn thành ca' : hint);
 
     if (this.actionCooldown > 0) return currentStatus;
+    if (isSweeping && this.gameState.isStorageFull()) return 'Storage full. Return to the green dock.';
 
-    const nearestDirt = this.dirtSpawner.findNearestSpot(this.currentPosition);
-    const isSweeping = this.input.state.suction;
-
-    if (this.dustSpawner.checkCollision(this.currentPosition, isSweeping)) {
-      this.audioManager.playSweep();
+    const collected = this.dustSpawner.checkCollision(this.currentPosition, isSweeping, this.gameState.storageCapacity - this.gameState.storage, point => this.canInteract(point));
+    if (collected > 0) {
+      this.gameState.storage += collected;
+      this.audioManager.playCollectItem();
+      this.actionCooldown = this.ACTION_INTERVAL;
       currentStatus = 'Dust collected.';
     }
 
-    if (isSweeping && nearestDirt) {
+    if (isSweeping && nearestDirt && !this.gameState.isStorageFull()) {
       const result = this.dirtSpawner.applySweep(nearestDirt);
       this.actionCooldown = this.ACTION_INTERVAL;
       if (result === 'wrong_tool') {
         this.audioManager.playWrongTool();
         return 'Needs mop [R].';
       }
+      this.gameState.collectItem();
       if (result === 'cleaned') {
         this.audioManager.playClean();
         this.gameState.cleanedCells += 1;
@@ -810,20 +1029,46 @@ export class Engine {
     return currentStatus;
   }
 
-  private async advanceDay() {
-    this.isAdvancingDay = true;
+  private completeDay() {
+    if (this.isReadingStory) return;
+    this.isReadingStory = true;
+    this.pendingReport = { day: this.day, stains: this.mission.spots, dust: this.mission.dust, battery: this.gameState.battery };
     this.audioManager.playDayComplete();
+    this.audioManager.setMovement(false);
+    this.input.reset();
+    this.robot.stopMovement();
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.saveProgress(this.day);
+    this.updateHud('Ca dọn hoàn thành · Nhật ký đã mở.');
+    showDayReport(this.pendingReport);
+  }
 
+  public async nextDay() {
+    if (!this.isReadingStory || this.isAdvancingDay || this.isPreparingDay) return;
+    this.isAdvancingDay = true;
+    this.isReadingStory = false;
+    this.pendingReport = undefined;
+    document.getElementById('story-screen')?.classList.remove('active');
     this.day += 1;
     this.gameState.day = this.day;
     this.gameState.battery = MAX_BATTERY;
+    this.bumpTimer = this.cameraShakeTimer = this.huskyHitCooldown = this.huskyRandomTimer = 0;
+    this.input.reset();
+    this.robot.spawn(this.robotSpawn.x, this.robotSpawn.y, this.robotSpawn.z);
+    this.husky.spawn(this.huskySpawn.x, this.huskySpawn.y, this.huskySpawn.z);
+    this.husky.setBounds(this.playableBounds);
+    this.rat.spawn(this.robotSpawn.x, this.robotSpawn.y, this.robotSpawn.z);
     this.spawnObstaclesForDay(this.day);
     await this.spawnDirtForDay(this.day);
-    this.saveProgress();
     this.isAdvancingDay = false;
   }
 
   private applyCameraShake(deltaTime: number) {
+    if (settingsStore.get().reducedMotion) {
+      this.cameraShakeTimer = 0;
+      this.robot.cameraGroup.position.set(0, 0, 0);
+      return;
+    }
     if (this.cameraShakeTimer > 0) {
       this.cameraShakeTimer = Math.max(0, this.cameraShakeTimer - deltaTime);
       const t = this.cameraShakeTimer / 0.25;
@@ -882,9 +1127,10 @@ export class Engine {
     const restartBtn = document.getElementById('restart-btn');
 
     if (gameOverScreen && reasonText && restartBtn) {
-      reasonText.innerText = message.toUpperCase();
+      reasonText.innerText = message === 'Out of battery!' || /battery/i.test(message) ? 'Pin đã cạn trước khi về trạm. Ca dọn có thể bắt đầu lại.' : 'Ca dọn bị gián đoạn. Thử chuẩn bị lại căn nhà.';
       gameOverScreen.classList.add('active');
-      restartBtn.onclick = () => window.location.reload();
+      document.getElementById('pause-screen')?.classList.remove('active');
+      restartBtn.onclick = () => this.restartDay();
     }
   }
 }

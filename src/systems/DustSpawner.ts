@@ -4,9 +4,8 @@ import { CELL_SIZE, getLevelTuning, GRID_SIZE } from '../utils/constants';
 interface DustParticle {
   mesh: THREE.Mesh;
   active: boolean;
-  velocity: THREE.Vector3;
   lifetime: number;
-  maxLifetime: number;
+  anchor: THREE.Vector3;
 }
 
 export class DustSpawner {
@@ -16,19 +15,21 @@ export class DustSpawner {
   private floorY = 0;
   private spawnBounds?: THREE.Box3;
   private particleGeometry = new THREE.SphereGeometry(0.018, 8, 8);
+  private spawnPoints?: THREE.Vector3[];
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.scene.add(this.dustGroup);
   }
 
-  public spawnForDay(dayNumber: number, floorY: number, color: number = 0xcccccc, bounds?: THREE.Box3) {
+  public spawnForDay(dayNumber: number, floorY: number, color: number = 0xcccccc, bounds?: THREE.Box3, points?: THREE.Vector3[]) {
     this.clearAll();
 
     this.floorY = floorY;
     this.spawnBounds = bounds?.clone();
+    this.spawnPoints = points;
 
-    const numDust = getLevelTuning(dayNumber).dustParticles;
+    const numDust = points?.length === 0 ? 0 : getLevelTuning(dayNumber).dustParticles;
     for (let i = 0; i < numDust; i += 1) {
       const material = new THREE.MeshStandardMaterial({
         color,
@@ -49,9 +50,8 @@ export class DustSpawner {
       this.particles.push({
         mesh,
         active: true,
-        velocity: this.createVelocity(),
         lifetime: 0,
-        maxLifetime: 10 + Math.random() * 20,
+        anchor: mesh.position.clone(),
       });
     }
   }
@@ -60,34 +60,26 @@ export class DustSpawner {
     for (const particle of this.particles) {
       if (!particle.active) continue;
 
-      particle.mesh.position.addScaledVector(particle.velocity, deltaTime);
-      particle.mesh.position.y += Math.sin(particle.lifetime * 2.2) * 0.0012 * deltaTime;
       particle.lifetime += deltaTime;
-
-      if (!this.isInsideBounds(particle.mesh.position) || particle.lifetime >= particle.maxLifetime) {
-        this.respawnParticle(particle);
-      }
+      particle.mesh.position.y = particle.anchor.y + Math.sin(particle.lifetime * 2.2) * 0.006;
     }
   }
 
-  public checkCollision(playerPosition: THREE.Vector3, sweepActive: boolean): boolean {
-    if (!sweepActive) return false;
+  public checkCollision(playerPosition: THREE.Vector3, sweepActive: boolean, capacity = Infinity, canCollect?: (point: THREE.Vector3) => boolean): number {
+    if (!sweepActive) return 0;
 
-    let cleaned = false;
+    let cleaned = 0;
     const sweepRadius = 0.52;
 
     for (const particle of this.particles) {
       if (!particle.active) continue;
+      if (cleaned >= capacity) break;
 
       const dist = particle.mesh.position.distanceTo(playerPosition);
-      if (dist < sweepRadius) {
+      if (dist < sweepRadius && (!canCollect || canCollect(particle.mesh.position))) {
         particle.active = false;
         particle.mesh.visible = false;
-        cleaned = true;
-
-        window.setTimeout(() => {
-          this.respawnParticle(particle);
-        }, 3000 + Math.random() * 2000);
+        cleaned += 1;
       }
     }
 
@@ -115,29 +107,13 @@ export class DustSpawner {
     this.particles = [];
   }
 
-  private respawnParticle(particle: DustParticle) {
-    this.placeParticle(particle.mesh);
-    particle.velocity.copy(this.createVelocity());
-    particle.lifetime = 0;
-    particle.maxLifetime = 10 + Math.random() * 20;
-    particle.active = true;
-    particle.mesh.visible = true;
-  }
-
   private placeParticle(mesh: THREE.Mesh) {
     const area = this.getSpawnArea();
-    const x = THREE.MathUtils.lerp(area.minX, area.maxX, Math.random());
-    const z = THREE.MathUtils.lerp(area.minZ, area.maxZ, Math.random());
-    const y = this.floorY + 0.025 + Math.random() * 0.08;
+    const point = this.spawnPoints?.[Math.floor(Math.random() * this.spawnPoints.length)];
+    const x = point?.x ?? THREE.MathUtils.lerp(area.minX, area.maxX, Math.random());
+    const z = point?.z ?? THREE.MathUtils.lerp(area.minZ, area.maxZ, Math.random());
+    const y = (point?.y ?? this.floorY) + 0.025 + Math.random() * 0.04;
     mesh.position.set(x, y, z);
-  }
-
-  private createVelocity() {
-    return new THREE.Vector3(
-      (Math.random() - 0.5) * 0.012,
-      Math.random() * 0.018,
-      (Math.random() - 0.5) * 0.012
-    );
   }
 
   private getSpawnArea() {
@@ -154,15 +130,4 @@ export class DustSpawner {
     return { minX: -halfSize, maxX: halfSize, minZ: -halfSize, maxZ: halfSize };
   }
 
-  private isInsideBounds(position: THREE.Vector3) {
-    const area = this.getSpawnArea();
-    return (
-      position.x >= area.minX &&
-      position.x <= area.maxX &&
-      position.z >= area.minZ &&
-      position.z <= area.maxZ &&
-      position.y >= this.floorY &&
-      position.y <= this.floorY + 0.28
-    );
-  }
 }

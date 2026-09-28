@@ -1,154 +1,402 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RoboClean</title>
+    <meta name="theme-color" content="#e9e4d8" />
+    <meta
+      name="description"
+      content="Một robot nhỏ. Một căn nhà nhiều chuyện. Dọn nhà, gặp gỡ gia đình và mở từng trang nhật ký."
+    />
+    <title>RoboClean — Nhà có chuyện</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="start-screen" class="screen active">
-      <div class="hub">
-        <div class="hub-brand">
-          <img src="/image/logo.png" alt="RoboClean" class="brand-mark" />
-          <div class="brand-type">
-            <div class="brand-title">ROBOCLEAN</div>
-            <div class="brand-tagline">Autonomous Protocol, Day by Day</div>
+      <div class="workbench">
+        <header class="masthead">
+          <a href="/" class="wordmark" aria-label="RoboClean, trang chủ"
+            ><span class="brand-symbol" aria-hidden="true">R</span>
+            ROBOCLEAN<span class="edition">HOUSEHOLD / 01</span></a
+          >
+          <div class="masthead-actions">
+            <span class="online"><i></i> Xưởng đã sẵn sàng</span
+            ><button class="settings-open button-quiet">
+              Tuỳ chỉnh <span aria-hidden="true">⚙</span>
+            </button>
           </div>
-        </div>
-
-        <div class="hub-actions">
-          <button id="continue-btn" class="btn primary" disabled>CONTINUE</button>
-          <div id="continue-meta" class="meta muted">NO SAVE FOUND</div>
-
-          <div class="divider"></div>
-
-          <button class="btn music-toggle" type="button">MUSIC ON</button>
-          <button id="new-run-btn" class="btn">NEW RUN</button>
-
-          <div class="replay">
-            <div class="replay-row">
-              <div class="label">REPLAY DAY</div>
-              <select id="replay-day" class="select" disabled></select>
+        </header>
+        <main class="hub">
+          <section class="hub-intro">
+            <p class="eyebrow">Nhật ký của một robot dọn nhà</p>
+            <h1>Nhà sạch.<br /><em>Chuyện chưa hết.</em></h1>
+            <p class="intro-copy">
+              Đằng sau một vệt cà phê là một buổi sáng vội. Đằng sau đống bột
+              mì… thường là Bắp. Cùng robot nhỏ chăm sóc một gia đình không bao
+              giờ hết chuyện.
+            </p>
+            <div class="hub-actions">
+              <button id="new-run-btn" class="button-primary">
+                Bắt đầu câu chuyện <span aria-hidden="true">↗</span></button
+              ><button id="continue-btn" class="button-secondary" disabled>
+                Tiếp tục ca dọn
+              </button>
             </div>
-            <button id="replay-btn" class="btn" disabled>PLAY SELECTED DAY</button>
-          </div>
-        </div>
-
-        <div class="hub-foot">
-          <div class="key-hint"><span class="k">WASD</span> or <span class="k">ARROWS</span> move, <span class="k">E</span> sweep, <span class="k">R</span> mop</div>
-          <div class="key-hint muted"><span class="k">PgUp/Dn</span> camera height, <span class="k">[</span><span class="k">]</span> FOV, <span class="k">Home</span> reset</div>
-          <div class="key-hint muted">Click to lock mouse in game, press ESC to pause.</div>
-        </div>
+            <p id="continue-meta" class="save-note">Chưa có ca dọn được lưu.</p>
+            <div class="shift-preview">
+              <span class="plate-number">01</span>
+              <div>
+                <span class="eyebrow">Ca dọn đầu tiên</span
+                ><strong id="hub-chapter">Một thành viên mới</strong>
+                <p id="hub-mission">Hút bụi rời và làm quen với căn nhà.</p>
+              </div>
+            </div>
+          </section>
+          <figure class="assembly-board">
+            <div class="drawing-header">
+              <span>RC—01 / BẢN VẼ LẮP RÁP</span><span>TỈ LỆ 1:4</span>
+            </div>
+            <img
+              src="/interface/robot-assembly.svg"
+              alt="Bản vẽ kỹ thuật robot hút bụi với nắp máy, quạt hút, hộp chứa và chổi quét"
+              width="700"
+              height="500"
+            />
+            <figcaption>
+              <span class="serial">MỘT CỖ MÁY NHỎ, MỘT VIỆC RẤT LỚN.</span
+              ><span class="seal">KIỂM ĐỊNH<br /><b>ĐẠT</b></span>
+            </figcaption>
+          </figure>
+          <section class="household">
+            <div class="section-heading">
+              <span class="eyebrow">Hồ sơ hộ gia đình</span
+              ><span>04 cư dân · 01 robot</span>
+            </div>
+            <div class="cast-list">
+              <div class="cast-member">
+                <span class="avatar avatar-an">A</span>
+                <div>
+                  <strong>An</strong><span>Thợ làm bánh · hay lo xa</span>
+                </div>
+              </div>
+              <div class="cast-member">
+                <span class="avatar avatar-minh">M</span>
+                <div>
+                  <strong>Minh</strong
+                  ><span>Thợ sửa máy · ít nói, nhiều lòng</span>
+                </div>
+              </div>
+              <div class="cast-member">
+                <span class="avatar avatar-bap">B</span>
+                <div>
+                  <strong>Bắp</strong><span>Husky · trưởng ban gây chuyện</span>
+                </div>
+              </div>
+              <div class="cast-member">
+                <span class="avatar avatar-ti">T</span>
+                <div>
+                  <strong>Tí</strong
+                  ><span>Chuột · khách thuê không trả tiền</span>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="hub-journal">
+            <div class="section-heading">
+              <span class="eyebrow">Những ngày ở nhà</span
+              ><button class="journal-open text-button">
+                Mở nhật ký <span aria-hidden="true">↗</span>
+              </button>
+            </div>
+            <div id="chapter-preview" class="chapter-preview"></div>
+            <div class="replay-controls">
+              <label for="replay-day">Dọn lại một ngày</label
+              ><select id="replay-day" disabled></select
+              ><button id="replay-btn" class="button-quiet" disabled>
+                Vào ca
+              </button>
+            </div>
+          </section>
+        </main>
+        <footer class="bench-footer">
+          <span
+            ><kbd>W A S D</kbd> Di chuyển <kbd>E</kbd> Hút
+            <kbd>R</kbd> Lau</span
+          ><span>Thiết kế cho bàn phím & chuột · Tai nghe sẽ vui hơn.</span>
+        </footer>
       </div>
     </div>
-
     <div id="loading-screen" class="screen">
-      <div class="load">
-        <div class="load-top">
-          <div class="load-dot"></div>
-          <div class="load-title">BOOT SEQUENCE</div>
+      <section class="loading-content metal-panel">
+        <span class="eyebrow">RC—01 / Khởi động ca dọn</span>
+        <h1>Đang mở cửa nhà…</h1>
+        <p>Kiểm tra chổi, nạp pin, tìm Bắp. Bước cuối hơi khó.</p>
+        <div class="loading-track"><div id="loading-progress"></div></div>
+        <p id="loading-text" role="status">Đang chuẩn bị mô hình</p>
+        <button id="loading-retry" class="button-secondary" hidden>
+          Thử lại
+        </button>
+      </section>
+    </div>
+    <div id="game-ui" class="screen" aria-label="Thông tin ca dọn">
+      <section class="hud-mission metal-panel">
+        <div class="hud-heading">
+          <span id="day-counter" class="eyebrow">Ngày 01</span
+          ><span class="difficulty-label"
+            >Mức việc <b id="difficulty">0.8×</b></span
+          >
         </div>
-        <div id="loading-text" class="load-line">INITIALIZING SYSTEMS...</div>
-        <div class="load-bar">
-          <div id="loading-progress" class="load-bar-fill"></div>
+        <h1 id="level-title">Một thành viên mới</h1>
+        <p id="mission"></p>
+        <p id="objectives" class="objectives">Đang chuẩn bị nhà…</p>
+      </section>
+      <section class="hud-telemetry metal-panel" aria-label="Pin và hộp chứa">
+        <div class="meter-row">
+          <span>Pin</span><strong id="battery">100%</strong>
         </div>
-        <div class="load-sub muted">Loading assets and calibrating sensors.</div>
+        <div
+          class="meter"
+          role="meter"
+          aria-label="Pin"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="100"
+          id="battery-meter"
+        >
+          <div id="battery-bar"></div>
+        </div>
+        <div class="meter-row">
+          <span>Hộp chứa</span><strong id="storage">0 / 12</strong>
+        </div>
+        <div class="meter storage-meter"><div id="storage-bar"></div></div>
+        <div class="telemetry-footer">
+          <span>Vết còn lại <b id="progress">—</b></span
+          ><span id="status" role="status">Sẵn sàng</span>
+        </div>
+      </section>
+      <div class="hud-dock metal-panel" id="dock-hint">
+        Trạm sạc · Dừng để sạc và đổ bụi
+      </div>
+      <div class="hud-tools metal-panel">
+        <div class="tool-keys">
+          <span><kbd>E</kbd> Hút bụi</span><span><kbd>R</kbd> Lau sàn</span>
+        </div>
+        <div id="action">Tiến lại gần vết bẩn</div>
+        <div class="target-track" aria-hidden="true">
+          <div id="target-progress"></div>
+        </div>
+      </div>
+      <div class="hud-system">
+        <button
+          id="camera-mode-btn"
+          class="button-secondary"
+          title="Đổi góc nhìn (C)"
+        >
+          Cam: Bám theo</button
+        ><button
+          class="settings-open button-secondary"
+          aria-label="Mở tuỳ chỉnh"
+          title="Tuỳ chỉnh (Tab)"
+        >
+          ⚙</button
+        ><button
+          id="pause-btn"
+          class="button-secondary"
+          aria-label="Tạm dừng"
+          title="Tạm dừng (Esc)"
+        >
+          Ⅱ</button
+        ><button
+          id="reset-btn"
+          class="button-quiet"
+          title="Đặt lại camera (Home)"
+        >
+          ↺ Cam</button
+        ><span id="camera-settings">Cuộn để zoom · C đổi cam</span>
+      </div>
+      <div id="mobile-note">
+        Ca dọn cần bàn phím và chuột. Bạn vẫn có thể xem nhật ký và tuỳ chỉnh ở
+        đây.
       </div>
     </div>
-
-    <div id="game-ui" class="screen">
-      <div class="hud-panel top-left mission-panel">
-        <div class="mission-kicker">ACTIVE LEVEL</div>
-        <div class="mission-head">
-          <span id="day-counter" class="value day-badge">DAY 1</span>
-          <span id="difficulty" class="value difficulty-badge">1.0x</span>
-        </div>
-        <div id="level-title" class="level-title">BOOT-UP</div>
-        <div id="mission" class="mission-text">RUN DIAGNOSTICS</div>
-      </div>
-
-      <div class="hud-panel top-right telemetry-panel">
-        <div class="rpg-bar-container energy-bar-container">
-          <div class="rpg-bar-label">ENERGY</div>
-          <div class="rpg-bar-bg">
-            <div id="battery-bar" class="rpg-bar-fill energy-fill" style="width: 100%"></div>
-            <div id="battery" class="rpg-bar-text">100%</div>
-          </div>
-        </div>
-
-        <div class="telemetry-grid">
-          <div class="telemetry-cell">
-            <span class="label">DIRT LEFT</span>
-            <span id="progress" class="value text-accent">0 / 0</span>
-          </div>
-          <div class="telemetry-cell">
-            <span class="label">STORAGE</span>
-            <span id="storage" class="value">0 / 12</span>
-            <div class="stat-bar"><div id="storage-bar" class="stat-fill storage-fill" style="width: 0%"></div></div>
-          </div>
-          <div class="telemetry-cell wide">
-            <span class="label">STATUS</span>
-            <span id="status" class="value status-text">READY</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="hud-panel bottom-center action-panel">
-        <div id="action" class="action-prompt"><span>[ E ]</span> SWEEP <span>[ R ]</span> MOP</div>
-      </div>
-
-      <div class="hud-panel bottom-right system-panel">
-        <button id="reset-btn" class="cyber-btn small">SYSTEM RESET</button>
-        <div class="camera-info">
-          <div class="camera-label">CAMERA</div>
-          <div id="camera-settings" class="camera-settings">H: 12cm | FOV: 85deg</div>
-        </div>
-      </div>
-    </div>
-
     <div id="pause-screen" class="screen">
-      <div class="pause">
-        <div class="pause-head">
-          <div class="pause-title">PAUSED</div>
-          <div class="pause-sub muted">Simulation suspended.</div>
-        </div>
-
-        <div class="pause-actions">
-          <button id="resume-btn" class="btn primary">RESUME</button>
-          <button class="btn music-toggle" type="button">MUSIC ON</button>
-          <button id="restart-day-btn" class="btn">RESTART DAY</button>
-          <button id="restart-run-btn" class="btn danger">RESTART RUN</button>
-        </div>
-
+      <section class="pause metal-panel">
+        <span class="eyebrow">Robot đang nghỉ một chút</span>
+        <h1>Mọi chuyện có thể đợi.</h1>
+        <p>
+          Ca dọn được lưu từ đầu ngày. Khi trở lại, pin và căn nhà vẫn ở đây.
+        </p>
+        <button id="resume-btn" class="button-primary">
+          Tiếp tục dọn <span aria-hidden="true">→</span>
+        </button>
         <div class="pause-controls">
-          <div class="controls-title muted">CONTROLS</div>
-          <div class="controls-grid">
-            <div class="controls-item"><span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> <span class="muted">move</span></div>
-            <div class="controls-item"><span class="k">ARROWS</span> <span class="muted">move</span></div>
-            <div class="controls-item"><span class="k">E</span> <span class="muted">sweep</span></div>
-            <div class="controls-item"><span class="k">R</span> <span class="muted">mop</span></div>
-            <div class="controls-item"><span class="k">ESC</span> <span class="muted">pause</span></div>
-            <div class="controls-item"><span class="k">CLICK</span> <span class="muted">lock mouse</span></div>
-          </div>
-          <div class="controls-title muted camera-controls-title">CAMERA</div>
-          <div class="controls-grid">
-            <div class="controls-item"><span class="k">PgUp</span><span class="k">PgDn</span> <span class="muted">height</span></div>
-            <div class="controls-item"><span class="k">[</span><span class="k">]</span> <span class="muted">FOV</span></div>
-            <div class="controls-item"><span class="k">Home</span> <span class="muted">reset view</span></div>
-          </div>
+          <span><kbd>W A S D</kbd> Di chuyển</span
+          ><span><kbd>Chuột</kbd> Xoay góc nhìn</span
+          ><span><kbd>E</kbd> Giữ để hút</span
+          ><span><kbd>R</kbd> Giữ để lau</span
+          ><span><kbd>C</kbd> Đổi camera</span><span><kbd>Esc</kbd> Nghỉ</span>
         </div>
-      </div>
+        <div class="pause-links">
+          <button class="settings-open text-button">Tuỳ chỉnh máy</button
+          ><button class="journal-open text-button">Nhật ký gia đình</button
+          ><button id="restart-day-btn" class="text-button">
+            Dọn lại ngày này</button
+          ><button id="home-btn" class="text-button">Về xưởng</button>
+        </div>
+      </section>
     </div>
-
     <div id="game-over-screen" class="screen">
-      <div class="game-over-content glass-panel">
-        <h1 class="critical-text">SYSTEM FAILURE</h1>
-        <p id="game-over-reason">CRITICAL ERROR ENCOUNTERED</p>
-        <button id="restart-btn" class="cyber-btn">REBOOT SYSTEM</button>
-      </div>
+      <section class="game-over-content metal-panel">
+        <span class="eyebrow">Một chút trục trặc</span>
+        <h1>Robot cần nghỉ.</h1>
+        <p id="game-over-reason"></p>
+        <p>Thử về trạm sạc sớm hơn và để ý hộp chứa ở góc màn hình.</p>
+        <button id="restart-btn" class="button-primary">Thử lại ca dọn</button
+        ><button class="home-link button-quiet">Về xưởng</button>
+      </section>
     </div>
-
+    <div id="story-screen" class="screen">
+      <article class="story-sheet" aria-labelledby="story-title">
+        <div class="story-spine">
+          <span>NHẬT KÝ GIA ĐÌNH / ROBOCLEAN</span
+          ><span id="story-day">NGÀY 01</span>
+        </div>
+        <div class="story-body">
+          <div class="story-top">
+            <span id="story-mood" class="eyebrow"></span
+            ><span class="receipt-stamp">CA DỌN<br />HOÀN THÀNH</span>
+          </div>
+          <h1 id="story-title"></h1>
+          <p id="story-deck" class="story-deck"></p>
+          <div id="story-content"></div>
+          <div id="story-stats" class="story-stats"></div>
+          <div class="story-actions">
+            <button id="next-day-btn" class="button-primary">
+              Sang ngày tiếp theo <span aria-hidden="true">→</span></button
+            ><button class="journal-open text-button">Đọc lại nhật ký</button>
+          </div>
+          <p class="story-save-note">
+            Đã lưu ca dọn. Bạn có thể nghỉ ở đây và trở lại sau.
+          </p>
+          <button class="home-link text-button">Về xưởng</button>
+        </div>
+      </article>
+    </div>
+    <dialog
+      id="settings-dialog"
+      class="settings-sheet"
+      aria-labelledby="settings-title"
+    >
+      <header class="sheet-header">
+        <div>
+          <span class="eyebrow">Bảng điều chỉnh / RC—01</span>
+          <h1 id="settings-title">Vừa tay bạn.</h1>
+        </div>
+        <button class="dialog-close button-quiet" aria-label="Đóng tuỳ chỉnh">
+          ✕
+        </button>
+      </header>
+      <form id="settings-form">
+        <fieldset>
+          <legend>01 / Âm thanh</legend>
+          <label class="setting-toggle"
+            >Nhạc trong nhà<input
+              id="setting-music"
+              type="checkbox"
+              checked /></label
+          ><label class="setting-toggle"
+            >Âm thanh máy & thú cưng<input
+              id="setting-sfx"
+              type="checkbox"
+              checked /></label
+          ><label class="setting-range" for="setting-volume"
+            >Âm lượng chung <output id="volume-value">80%</output
+            ><input
+              id="setting-volume"
+              type="range"
+              min="0"
+              max="100"
+              value="80" /></label
+          ><button type="button" class="track-toggle text-button">
+            Đổi bản nhạc
+          </button>
+        </fieldset>
+        <fieldset>
+          <legend>02 / Camera</legend>
+          <label class="setting-select" for="setting-camera"
+            >Góc nhìn<select id="setting-camera">
+              <option value="follow">Bám theo robot</option>
+              <option value="overhead">Quan sát từ trên</option>
+            </select></label
+          ><label class="setting-range" for="setting-sensitivity"
+            >Độ nhạy chuột <output id="sensitivity-value">1.0×</output
+            ><input
+              id="setting-sensitivity"
+              type="range"
+              min="0.4"
+              max="2"
+              step="0.1"
+              value="1" /></label
+          ><label class="setting-range" for="setting-fov"
+            >Độ rộng góc nhìn <output id="fov-value">70°</output
+            ><input
+              id="setting-fov"
+              type="range"
+              min="58"
+              max="84"
+              value="70" /></label
+          ><label class="setting-toggle"
+            >Đảo chiều dọc chuột<input id="setting-invert" type="checkbox"
+          /></label>
+          <p class="setting-note">
+            Cuộn chuột để gần / xa. C đổi góc nhìn. Home đưa camera về vị trí
+            mặc định.
+          </p>
+        </fieldset>
+        <fieldset>
+          <legend>03 / Khả năng quan sát</legend>
+          <label class="setting-toggle"
+            >Viền nhận diện vết bẩn<input
+              id="setting-outlines"
+              type="checkbox"
+              checked
+          /></label>
+          <p class="setting-note">
+            Viền cam: hút bụi. Viền xanh xám: lau. Dấu góc kép: cần hút rồi lau.
+          </p>
+          <label class="setting-toggle"
+            >Giảm chuyển động & rung<input id="setting-motion" type="checkbox"
+          /></label>
+        </fieldset>
+        <footer class="settings-footer">
+          <span>Tự động lưu trên thiết bị này.</span
+          ><button id="settings-reset" type="button" class="text-button">
+            Về mặc định
+          </button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog
+      id="journal-dialog"
+      class="journal-sheet"
+      aria-labelledby="journal-title"
+    >
+      <header class="sheet-header">
+        <div>
+          <span class="eyebrow">Những chuyện robot giữ lại</span>
+          <h1 id="journal-title">Nhật ký gia đình.</h1>
+        </div>
+        <button class="dialog-close button-quiet" aria-label="Đóng nhật ký">
+          ✕
+        </button>
+      </header>
+      <p id="journal-summary"></p>
+      <div class="journal-layout">
+        <nav id="journal-days" aria-label="Các ngày trong nhật ký"></nav>
+        <article id="journal-entry"></article>
+      </div>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

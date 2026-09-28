@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 /**
  * GLTF asset interface containing scene and animations
@@ -38,6 +39,14 @@ export class AssetManager {
       this.loader.load(
         path,
         (gltf) => {
+          // Refresh geometry bounds before cloning, scaling, and spatial indexing.
+          gltf.scene.traverse(object => {
+            if ((object as THREE.Mesh).isMesh) {
+              const geometry = (object as THREE.Mesh).geometry;
+              geometry.computeBoundingBox();
+              geometry.computeBoundingSphere();
+            }
+          });
           this.models.set(name, { scene: gltf.scene, animations: gltf.animations || [] });
           resolve();
         },
@@ -62,14 +71,7 @@ export class AssetManager {
       console.warn(`Model ${name} not found!`);
       return undefined;
     }
-    // SkinnedMesh clone bug fix: Do not clone animated entities like Husky, Robot, and Rat
-    // Sửa lỗi clone SkinnedMesh: Không clone các thực thể có hoạt ảnh như Husky, Robot và Rat
-    if (name === 'husky' || name === 'robot' || name === 'Rat') {
-      return asset.scene;
-    }
-    // Clone recursively for static obstacles
-    // Clone đệ quy cho các chướng ngại vật tĩnh
-    return asset.scene.clone(true);
+    return clone(asset.scene) as THREE.Group;
   }
 
   /**

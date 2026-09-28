@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { assetManager } from '../core/AssetManager';
 import { HUSKY_MODEL_TARGET_SIZE } from '../utils/constants';
+import { CharacterAnimator } from '../core/CharacterAnimator';
+import type { CharacterAnimation } from '../core/CharacterAnimator';
 
-export type HuskyState = 'idle' | 'walk' | 'lie' | 'attack' | 'chase' | 'curious';
+export type HuskyState = 'idle' | 'walk' | 'lie' | 'alert' | 'attack' | 'chase' | 'curious';
 
 export class Husky {
   public group = new THREE.Group();
@@ -25,9 +27,7 @@ export class Husky {
 
   private tempBox = new THREE.Box3();
   
-  private mixer?: THREE.AnimationMixer;
-  private animations: Record<string, THREE.AnimationAction> = {};
-  private currentAction?: THREE.AnimationAction;
+  private animator?: CharacterAnimator;
 
   // Tuning: these represent "expected" world-units-per-second for timeScale=1
   private readonly WALK_SPEED_REF = 0.45;
@@ -55,32 +55,15 @@ export class Husky {
       box.getSize(size);
       const dominantDim = Math.max(size.x, size.y, size.z);
       if (dominantDim > 0) {
-        this.group.scale.setScalar(HUSKY_MODEL_TARGET_SIZE / dominantDim);
+        this.model.scale.setScalar(HUSKY_MODEL_TARGET_SIZE / dominantDim);
       } else {
-        this.group.scale.setScalar(0.05); // fallback
+        this.model.scale.setScalar(0.05);
       }
 
       // Align model so its lowest point touches group's local y=0.
       this.alignFeetToGround();
 
-      const anims = assetManager.getAnimations('husky');
-      if (anims && anims.length > 0) {
-        this.mixer = new THREE.AnimationMixer(this.model);
-        anims.forEach(anim => {
-          const name = anim.name.toLowerCase();
-          if (name.includes('idle')) this.animations.idle = this.mixer!.clipAction(anim);
-          else if (name.includes('run')) this.animations.run = this.mixer!.clipAction(anim);
-          else if (name.includes('walk')) this.animations.walk = this.mixer!.clipAction(anim);
-          else if (name.includes('attack') || name.includes('bite') || name.includes('jump')) this.animations.attack = this.mixer!.clipAction(anim);
-          else if (name.includes('lie') || name.includes('sleep') || name.includes('sit')) this.animations.lie = this.mixer!.clipAction(anim);
-        });
-        
-        if (!this.animations.idle && anims.length > 0) this.animations.idle = this.mixer.clipAction(anims[0]);
-        if (!this.animations.walk && anims.length > 1) this.animations.walk = this.mixer.clipAction(anims[1]);
-        if (!this.animations.run) this.animations.run = this.animations.walk;
-        if (!this.animations.attack && anims.length > 2) this.animations.attack = this.mixer.clipAction(anims[2]);
-        if (!this.animations.lie && anims.length > 3) this.animations.lie = this.mixer.clipAction(anims[3]);
-      }
+      this.animator = new CharacterAnimator(this.model, assetManager.getAnimations('husky'));
     }
 
     // Create Alert Icon (Exclamation mark)
@@ -96,13 +79,13 @@ export class Husky {
     const tex = new THREE.CanvasTexture(canvas);
     const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
     this.alertIcon = new THREE.Sprite(mat);
-    this.alertIcon.scale.set(0.6, 0.6, 1);
-    this.alertIcon.position.y = 0.6; // Hover above head
+    this.alertIcon.scale.set(0.18, 0.18, 1);
+    this.alertIcon.position.y = 0.45;
     this.alertIcon.visible = false;
     this.group.add(this.alertIcon);
 
     // Dynamic Attack Ring
-    const ringGeo = new THREE.RingGeometry(0.8, 0.9, 32);
+    const ringGeo = new THREE.RingGeometry(0.30, 0.34, 32);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
     this.attackRing = new THREE.Mesh(ringGeo, ringMat);
     this.attackRing.rotation.x = -Math.PI / 2;
@@ -143,15 +126,8 @@ export class Husky {
     };
   }
 
-  private playAnimation(name: string) {
-    const action = this.animations[name] || this.animations.idle;
-    if (action && this.currentAction !== action) {
-      if (this.currentAction) {
-        this.currentAction.fadeOut(0.2);
-      }
-      action.reset().fadeIn(0.2).play();
-      this.currentAction = action;
-    }
+  private playAnimation(name: CharacterAnimation, speed = 1) {
+    this.animator?.play(name, speed);
   }
 
   private random(min: number, max: number) {
@@ -159,11 +135,19 @@ export class Husky {
   }
 
   public startChase() {
-    this.state = 'chase';
-    this.stateTimer = 15; // Give it 15 seconds to catch the player
-    this.speed = 1.08; // Fast run (0.018 * 60 to match user spec)
+    if (this.state === 'alert' || this.state === 'chase' || this.state === 'attack') return;
+    this.state = 'alert';
+    this.stateTimer = 0.9;
+    this.speed = 0;
     this.alertIcon.visible = true;
-    this.playAnimation('run');
+    this.playAnimation('idle');
+  }
+
+  public onContact() {
+    this.state = 'attack';
+    this.stateTimer = 0.65;
+    this.speed = 0;
+    this.playAnimation('attack');
   }
 
   public startCurious() {
@@ -224,23 +208,21 @@ export class Husky {
     const groundY = getGroundY ? getGroundY(this.group.position.x, this.group.position.z, this.floorY + 1.0) : undefined;
     this.group.position.y = groundY ?? this.floorY;
 
-    if (this.mixer) {
-      this.mixer.update(deltaTime);
-    }
-
     // Toggle Attack Ring visibility dynamically
-    this.attackRing.visible = (this.state === 'chase' || this.state === 'attack');
+    this.attackRing.visible = (this.state === 'alert' || this.state === 'chase' || this.state === 'attack');
 
     this.stateTimer -= deltaTime;
-    if (this.stateTimer <= 0 && this.state !== 'chase') {
-      this.pickNextState();
-    } else if (this.stateTimer <= 0 && this.state === 'chase') {
-      // Gave up chasing after timer
-      this.pickNextState();
+    if (this.stateTimer <= 0) {
+      if (this.state === 'alert') {
+        this.state = 'chase';
+        this.stateTimer = 6;
+        this.speed = 1.08;
+      } else if (this.state === 'attack') this.startCurious();
+      else this.pickNextState();
     }
 
     // Stealth Mechanic Check — only when Husky can actually SEE the player
-    if ((this.state === 'chase' || this.state === 'attack') && targetPlayer) {
+    if (this.state === 'chase' && targetPlayer) {
       const distToPlayer = this.group.position.distanceTo(targetPlayer);
       // Check LOS: if a wall is blocking, husky cannot perceive the player
       const huskyEye = this.group.position.clone().setY(this.group.position.y + 0.3);
@@ -264,7 +246,7 @@ export class Husky {
         this.pickNextState();
       } else if (dist > 0.05) {
         const dir = new THREE.Vector3().subVectors(this.targetPosition, this.group.position).normalize();
-        const moveDist = this.speed * deltaTime;
+        const moveDist = Math.min(dist, this.speed * deltaTime);
         
         let canMove = true;
         if (checkCollision) {
@@ -278,10 +260,17 @@ export class Husky {
         }
 
         if (canMove) {
-          this.group.position.addScaledVector(dir, moveDist);
+          const nextX = this.group.position.x + dir.x * moveDist;
+          const nextZ = this.group.position.z + dir.z * moveDist;
+          const nextY = getGroundY?.(nextX, nextZ, this.floorY + 1);
+          if (nextX < this.bounds.minX || nextX > this.bounds.maxX || nextZ < this.bounds.minZ || nextZ > this.bounds.maxZ || (getGroundY && nextY === undefined)) {
+            this.pickNextState();
+          } else this.group.position.set(nextX, nextY ?? this.floorY, nextZ);
           // Only look at target if it's far enough to avoid jittering
           if (dist > 0.1) {
-            this.group.lookAt(this.targetPosition.x, this.group.position.y, this.targetPosition.z);
+            const heading = Math.atan2(dir.x, dir.z);
+            const angle = Math.atan2(Math.sin(heading - this.group.rotation.y), Math.cos(heading - this.group.rotation.y));
+            this.group.rotation.y += angle * (1 - Math.exp(-10 * deltaTime));
           }
         } else if (this.state !== 'chase') {
           // If blocked while wandering, pick a new behavior and stop the "sliding walk" look.
@@ -302,18 +291,14 @@ export class Husky {
     // If we're in a locomotion state but effectively not moving, avoid "moonwalking".
     const movingEnough = moveSpeed > 0.03;
     if (this.state === 'walk' || this.state === 'chase') {
-      if (!movingEnough && this.state !== 'chase') {
+      if (!movingEnough) {
         this.playAnimation('idle');
       } else {
         const isRun = this.state === 'chase' || moveSpeed > 0.75;
-        this.playAnimation(isRun ? 'run' : 'walk');
         const ref = isRun ? this.RUN_SPEED_REF : this.WALK_SPEED_REF;
-        const action = this.currentAction;
-        if (action && ref > 0) {
-          // Clamp to keep animation stable even if dt spikes.
-          action.timeScale = THREE.MathUtils.clamp(moveSpeed / ref, 0.6, 1.8);
-        }
+        this.playAnimation(isRun ? 'run' : 'walk', THREE.MathUtils.clamp(moveSpeed / ref, 0.25, 1.8));
       }
     }
+    this.animator?.update(deltaTime);
   }
 }

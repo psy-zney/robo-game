@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { DIRT_INTERACT_DIST, DIRT_PLANE_SIZE, getLevelTuning } from '../utils/constants';
 
 export type CleanMethod = 'sweep' | 'mop' | 'sweep_then_mop';
+export const DIRT_LABELS: Record<string, string> = { Dust: 'Bụi khô', 'Thick Dust': 'Bụi dày', 'Coffee Spill': 'Cà phê', 'Sauce Stain': 'Sốt cà chua', 'Stubborn Dirt': 'Bùn bám', 'Heavy Grime': 'Vết bám dày' };
 
 export interface DirtConfig {
   name: string;
@@ -89,6 +90,7 @@ export class DirtSpawner {
   private textureLoader = new THREE.TextureLoader();
   private textureCache = new Map<string, THREE.Texture>();
   private spots: DirtSpot[] = [];
+  private generation = 0;
   public group = new THREE.Group();
 
   public async spawnForDay(
@@ -96,26 +98,39 @@ export class DirtSpawner {
     floorY: number,
     floorMeshes: THREE.Object3D[],
     dirtWeights?: Record<string, number>,
-    spawnBounds?: THREE.Box3
+    spawnBounds?: THREE.Box3,
+    reachablePoints?: THREE.Vector3[],
+    dock?: THREE.Vector3,
   ): Promise<DirtSpot[]> {
     this.clearAll();
+    const generation = this.generation;
 
     const targetCount = getLevelTuning(day).dirtSpots;
     const availableConfigs = DIRT_CONFIGS.filter((config) => config.minDay <= day);
     if (availableConfigs.length === 0) return [];
+    await Promise.all([...new Set(availableConfigs.map(config => config.texture))].map(path => this.loadTexture(path)));
+    if (generation !== this.generation) return [];
 
     const raycaster = new THREE.Raycaster();
     const downDir = new THREE.Vector3(0, -1, 0);
     const upDir = new THREE.Vector3(0, 1, 0);
     const area = this.getSpawnArea(spawnBounds);
+    const candidates = reachablePoints?.filter(point => !dock || Math.hypot(point.x - dock.x, point.z - dock.z) > 0.7);
+    const featured = day === 10 ? availableConfigs : [
+      day <= 5
+        ? availableConfigs.find(config => config.minDay === day)
+        : [...availableConfigs].sort((a, b) => (dirtWeights?.[b.name] ?? 1) - (dirtWeights?.[a.name] ?? 1))[0],
+    ];
 
     for (let attempts = 0; this.spots.length < targetCount && attempts < targetCount * 18; attempts += 1) {
-      const x = THREE.MathUtils.lerp(area.minX, area.maxX, Math.random());
-      const z = THREE.MathUtils.lerp(area.minZ, area.maxZ, Math.random());
+      if (candidates && candidates.length === 0) break;
+      const candidate = candidates?.[Math.floor(Math.random() * candidates.length)];
+      const x = candidate?.x ?? THREE.MathUtils.lerp(area.minX, area.maxX, Math.random());
+      const z = candidate?.z ?? THREE.MathUtils.lerp(area.minZ, area.maxZ, Math.random());
 
       if (!this.isValidFloorPosition(x, z, floorY, floorMeshes, raycaster, downDir, upDir)) continue;
 
-      const config = this.pickConfig(availableConfigs, dirtWeights);
+      const config = featured[this.spots.length] ?? this.pickConfig(availableConfigs, dirtWeights);
       const size = DIRT_PLANE_SIZE * THREE.MathUtils.lerp(config.sizeRange[0], config.sizeRange[1], Math.random());
 
       const tooClose = this.spots.some((spot) => {
@@ -125,35 +140,37 @@ export class DirtSpawner {
       });
       if (tooClose) continue;
 
-      await this.createSpot(config, x, z, size, floorY);
+      this.createSpot(config, x, z, size, candidate?.y ?? floorY);
     }
 
-    if (this.spots.length < Math.min(targetCount, 4)) {
+    if (!reachablePoints && this.spots.length < Math.min(targetCount, 4)) {
       const fallbackPositions = this.getFallbackPositions(area);
       for (const position of fallbackPositions) {
         if (this.spots.length >= Math.min(targetCount, 6)) break;
 
         const tooClose = this.spots.some((spot) => Math.hypot(spot.mesh.position.x - position.x, spot.mesh.position.z - position.z) < DIRT_PLANE_SIZE * 1.4);
         if (tooClose) continue;
+        if (!this.isValidFloorPosition(position.x, position.z, floorY, floorMeshes, raycaster, downDir, upDir)) continue;
 
         const config = this.pickConfig(availableConfigs, dirtWeights);
         const size = DIRT_PLANE_SIZE * THREE.MathUtils.lerp(config.sizeRange[0], config.sizeRange[1], Math.random());
-        await this.createSpot(config, position.x, position.z, size, floorY);
+        this.createSpot(config, position.x, position.z, size, floorY);
       }
     }
 
     return this.spots;
   }
 
-  public findNearestSpot(robotPos: THREE.Vector3): DirtSpot | null {
+  public findNearestSpot(robotPos: THREE.Vector3, canInteract?: (spot: DirtSpot) => boolean, step?: DirtSpot['currentStep']): DirtSpot | null {
     let nearest: DirtSpot | null = null;
     let minDist = DIRT_INTERACT_DIST;
 
     for (const spot of this.spots) {
       if (spot.currentStep === 'done') continue;
+      if (step && spot.currentStep !== step) continue;
 
       const dist = Math.hypot(spot.mesh.position.x - robotPos.x, spot.mesh.position.z - robotPos.z);
-      if (dist < minDist) {
+      if (dist < minDist && (!canInteract || canInteract(spot))) {
         minDist = dist;
         nearest = spot;
       }
@@ -199,8 +216,9 @@ export class DirtSpawner {
   }
 
   public clearAll() {
+    this.generation += 1;
     for (const spot of this.spots) {
-      this.disposeSpot(spot);
+      if (spot.currentStep !== 'done') this.disposeSpot(spot);
     }
     this.spots = [];
   }
@@ -233,8 +251,22 @@ export class DirtSpawner {
     });
   }
 
-  private async createSpot(config: DirtConfig, x: number, z: number, size: number, floorY: number) {
-    const texture = await this.loadTexture(config.texture);
+  public highlightSpot(target: DirtSpot | null, enabled: boolean, robotPosition: THREE.Vector3) {
+    for (const spot of this.spots) {
+      if (spot.currentStep === 'done') continue;
+      const outline = spot.mesh.userData.outline as THREE.LineSegments | undefined;
+      if (!outline) continue;
+      const selected = spot === target;
+      const distance = Math.hypot(spot.mesh.position.x - robotPosition.x, spot.mesh.position.z - robotPosition.z);
+      outline.visible = enabled && (selected || distance < 1.2);
+      const material = outline.material as THREE.LineBasicMaterial;
+      material.opacity = selected ? .95 : .3;
+      material.color.setHex(spot.currentStep === 'needs_mop' ? 0x526e78 : 0xb36c35);
+    }
+  }
+
+  private createSpot(config: DirtConfig, x: number, z: number, size: number, floorY: number) {
+    const texture = this.textureCache.get(config.texture);
     const geometry = new THREE.PlaneGeometry(size, size);
     const material = new THREE.MeshStandardMaterial({
       map: texture,
@@ -255,6 +287,23 @@ export class DirtSpawner {
     mesh.receiveShadow = true;
     mesh.userData.dirtName = config.name;
     mesh.userData.cleanMethod = config.method;
+    // Broken corners mark the work area without covering the stain texture.
+    const vertices: number[] = [];
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      const edge = size * .56;
+      const length = size * .18;
+      vertices.push(sx * (edge - length), sy * edge, .003, sx * edge, sy * edge, .003);
+      vertices.push(sx * edge, sy * edge, .003, sx * edge, sy * (edge - length), .003);
+      if (config.method === 'sweep_then_mop') {
+        vertices.push(sx * (edge - length), sy * (edge + .018), .003, sx * (edge + .018), sy * (edge + .018), .003);
+      }
+    }
+    const outlineGeometry = new THREE.BufferGeometry();
+    outlineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    const outline = new THREE.LineSegments(outlineGeometry, new THREE.LineBasicMaterial({ color: config.method === 'mop' ? 0x526e78 : 0xb36c35, transparent: true, opacity: .3, depthWrite: false }));
+    outline.visible = false;
+    mesh.add(outline);
+    mesh.userData.outline = outline;
 
     this.spots.push({
       config,
@@ -356,6 +405,11 @@ export class DirtSpawner {
   }
 
   private disposeSpot(spot: DirtSpot) {
+    const outline = spot.mesh.userData.outline as THREE.LineSegments | undefined;
+    if (outline) {
+      outline.geometry.dispose();
+      (outline.material as THREE.LineBasicMaterial).dispose();
+    }
     const material = spot.mesh.material as THREE.MeshStandardMaterial;
     material.dispose();
     spot.mesh.geometry.dispose();

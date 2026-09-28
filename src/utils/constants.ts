@@ -15,9 +15,10 @@ export const MAX_BATTERY = 100;
 export const ROBOT_RADIUS = 0.16;
 export const ROBOT_HEIGHT = 0.14;
 export const ROBOT_MODEL_TARGET_SIZE = 0.26;
-export const MOVE_SPEED = 0.026;
-export const SWEEP_SPEED = 0.018;
-export const MOP_SPEED = 0.014;
+// Meters per second; movement is independent of display refresh rate.
+export const MOVE_SPEED = 1.56;
+export const SWEEP_SPEED = 1.08;
+export const MOP_SPEED = 0.84;
 
 // Item and storage configuration.
 export const ITEM_COUNT = 18;

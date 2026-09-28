@@ -57,6 +57,10 @@ export class InputManager {
     window.addEventListener('mousedown', this.onMouseDown);
     window.addEventListener('mousemove', this.onMouseMove);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    window.addEventListener('blur', () => {
+      this.reset();
+      if (document.pointerLockElement) document.exitPointerLock();
+    });
   }
 
   /**
@@ -65,7 +69,7 @@ export class InputManager {
    */
   private onMouseDown = (event: MouseEvent) => {
     const target = event.target as HTMLElement | null;
-    if (target?.closest('button, select, input, textarea, a, #start-screen, #loading-screen, #pause-screen, #game-over-screen, .hub, .pause, .game-over-content')) {
+    if (target?.closest('button, select, input, textarea, a, dialog, #story-screen, #start-screen, #loading-screen, #pause-screen, #game-over-screen, .hub, .pause, .game-over-content')) {
       return;
     }
 
@@ -76,9 +80,6 @@ export class InputManager {
 
     if (!document.pointerLockElement) {
       document.body.requestPointerLock();
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
     }
   };
 
@@ -100,7 +101,16 @@ export class InputManager {
    */
   private onPointerLockChange = () => {
     this.state.isLocked = document.pointerLockElement === document.body;
+    this.reset();
   };
+
+  public reset() {
+    for (const key of Object.keys(this.state) as Array<keyof InputState>) {
+      if (key === 'isLocked') continue;
+      if (key === 'mouseDeltaX' || key === 'mouseDeltaY') this.state[key] = 0;
+      else this.state[key] = false;
+    }
+  }
 
   /**
    * Handle key down event
@@ -108,6 +118,9 @@ export class InputManager {
    * @param event - Keyboard event
    */
   private onKeyDown = (event: KeyboardEvent) => {
+    if (!this.state.isLocked) return;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home'].includes(event.code)) event.preventDefault();
+    if (event.repeat && (event.code === 'KeyE' || event.code === 'KeyR')) return;
     this.setKey(event.code, true);
   };
 
@@ -149,9 +162,11 @@ export class InputManager {
         break;
       case 'KeyE':
         this.state.suction = value;
+        if (value) this.state.mop = false;
         break;
       case 'KeyR':
         this.state.mop = value;
+        if (value) this.state.suction = false;
         break;
       // Camera adjustment controls
       // Điều khiển điều chỉnh camera

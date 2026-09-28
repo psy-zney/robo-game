@@ -6,10 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "tsx --test tests/gameplay.test.ts",
+    "test:e2e": "playwright test",
+    "inspect:assets": "node scripts/inspect-assets.mjs",
+    "inspect:blender": "node scripts/inspect-blender.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/three": "^0.184.0",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "vite": "^8.0.4"
   },

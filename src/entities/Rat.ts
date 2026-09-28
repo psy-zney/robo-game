@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { assetManager } from '../core/AssetManager';
 import { RAT_MODEL_TARGET_SIZE } from '../utils/constants';
+import { CharacterAnimator } from '../core/CharacterAnimator';
 
 /**
  * Rat Entity - Chuột AI di chuyển ngẫu nhiên trong phòng
@@ -19,6 +20,9 @@ export class Rat {
   };
   private waitTimer = 0;
   private floorY = 0;
+  private animator?: CharacterAnimator;
+  private direction = new THREE.Vector3();
+  private nextPosition = new THREE.Vector3();
 
   constructor() {
     this.model = assetManager.getModel('Rat');
@@ -38,6 +42,7 @@ export class Rat {
       this.scaleModelToWorld();
 
       this.group.add(this.model);
+      this.animator = new CharacterAnimator(this.model, assetManager.getAnimations('Rat'));
     }
   }
 
@@ -73,7 +78,10 @@ export class Rat {
     box.getSize(size);
     const dominantDim = Math.max(size.x, size.y, size.z);
 
-    this.group.scale.setScalar(dominantDim > 0 ? RAT_MODEL_TARGET_SIZE / dominantDim : 0.008);
+    this.model.scale.setScalar(dominantDim > 0 ? RAT_MODEL_TARGET_SIZE / dominantDim : 0.008);
+    this.model.updateMatrixWorld(true);
+    box.setFromObject(this.model);
+    this.model.position.y -= box.min.y;
   }
 
   /**
@@ -98,10 +106,13 @@ export class Rat {
    * Update rat movement and AI
    * @param deltaTime - Time since last frame in seconds
    */
-  public update(deltaTime: number) {
+  public update(deltaTime: number, canTravel?: (from: THREE.Vector3, to: THREE.Vector3) => boolean, getGround?: (x: number, z: number) => number | undefined) {
+    let moved = 0;
     // Wait before moving
     if (this.waitTimer > 0) {
       this.waitTimer -= deltaTime;
+      this.animator?.play('idle');
+      this.animator?.update(deltaTime);
       return;
     }
 
@@ -112,13 +123,22 @@ export class Rat {
       this.pickNextTarget();
     } else {
       // Move towards target
-      const dir = new THREE.Vector3().subVectors(this.targetPosition, this.group.position).normalize();
-      const moveDist = this.speed * deltaTime;
-      this.group.position.addScaledVector(dir, moveDist);
+      const dir = this.direction.subVectors(this.targetPosition, this.group.position).setY(0).normalize();
+      const moveDist = Math.min(dist, this.speed * deltaTime);
+      this.nextPosition.copy(this.group.position).addScaledVector(dir, moveDist);
+      const ground = getGround?.(this.nextPosition.x, this.nextPosition.z);
+      if ((!getGround || ground !== undefined) && (!canTravel || canTravel(this.group.position, this.nextPosition))) {
+        this.nextPosition.y = ground ?? this.floorY;
+        this.group.position.copy(this.nextPosition);
+        moved = moveDist;
+      } else this.pickNextTarget();
 
       // Face movement direction
       const targetRotation = Math.atan2(dir.x, dir.z);
-      this.group.rotation.y = targetRotation;
+      const angle = Math.atan2(Math.sin(targetRotation - this.group.rotation.y), Math.cos(targetRotation - this.group.rotation.y));
+      this.group.rotation.y += angle * (1 - Math.exp(-10 * deltaTime));
     }
+    this.animator?.play(moved > 0 ? 'walk' : 'idle', moved > 0 ? 0.65 : 1);
+    this.animator?.update(deltaTime);
   }
 }

@@ -1,3 +1,5 @@
+import type { DayReport } from './StorySystem';
+
 export interface SaveData {
   battery: number;
   cleanedCount: number;
@@ -7,6 +9,8 @@ export interface SaveData {
   version: string; // Save format version
   timestamp: number; // When the save was created
   playtime: number; // Total playtime in seconds
+  completedDays?: number[];
+  pendingReport?: DayReport;
 }
 
 export interface SaveMetadata {
@@ -61,6 +65,8 @@ export class SaveManager {
         version,
         timestamp,
         playtime,
+        completedDays: this.validateCompletedDays(parsed.completedDays, highestDay),
+        pendingReport: this.validateReport(parsed.pendingReport, day),
       };
 
       console.log(`✅ Loaded save: Day ${day}, Battery ${battery}%, Version ${version}`);
@@ -232,7 +238,22 @@ export class SaveManager {
       version: data.version || CURRENT_VERSION,
       timestamp: this.validateNumber(data.timestamp, Date.now(), 0, Date.now() + 31536000000),
       playtime: this.validateNumber(data.playtime, 0, 0, 31536000),
+      completedDays: this.validateCompletedDays(data.completedDays, data.highestDay ?? 1),
+      pendingReport: this.validateReport(data.pendingReport, data.day ?? 1),
     };
+  }
+
+  private static validateCompletedDays(days: unknown, highestDay: number): number[] {
+    // Migrate older checkpoints: only days before the furthest checkpoint were finished.
+    if (!Array.isArray(days)) return Array.from({ length: Math.max(0, Math.min(999, Math.floor(highestDay) - 1)) }, (_, i) => i + 1);
+    return [...new Set(days.filter((day): day is number => typeof day === 'number' && Number.isInteger(day) && day >= 1 && day <= 1000))].sort((a, b) => a - b);
+  }
+
+  private static validateReport(report: unknown, day: number): DayReport | undefined {
+    if (!report || typeof report !== 'object') return undefined;
+    const value = report as Partial<DayReport>;
+    if (value.day !== day) return undefined;
+    return { day, stains: this.validateNumber(value.stains, 0, 0, 100000), dust: this.validateNumber(value.dust, 0, 0, 100000), battery: this.validateNumber(value.battery, 100, 0, 100) };
   }
 
   private static createBackup() {

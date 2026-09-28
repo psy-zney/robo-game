@@ -36,7 +36,8 @@ export class ObstacleSpawner {
     dayNumber: number,
     floorY = 0,
     sceneBounds?: THREE.Box3,
-    floorMeshes?: THREE.Object3D[]
+    floorMeshes?: THREE.Object3D[],
+    protectedPositions: THREE.Vector3[] = [new THREE.Vector3(ROBOT_START.x, floorY, ROBOT_START.z), new THREE.Vector3(HUSKY_START.x, floorY, HUSKY_START.z)],
   ): SpawnedObstacle[] {
     const obstacleCount = getLevelTuning(dayNumber).obstacles;
     const spawnArea = this.getSpawnArea(sceneBounds);
@@ -47,7 +48,7 @@ export class ObstacleSpawner {
       const x = THREE.MathUtils.lerp(spawnArea.minX, spawnArea.maxX, Math.random());
       const z = THREE.MathUtils.lerp(spawnArea.minZ, spawnArea.maxZ, Math.random());
 
-      if (!this.isClearOfStarts(x, z)) continue;
+      if (protectedPositions.some(point => Math.hypot(x - point.x, z - point.z) < SPAWN_CLEAR_RADIUS)) continue;
       if (obstacles.some((other) => Math.hypot(other.mesh.position.x - x, other.mesh.position.z - z) < 0.72)) continue;
 
       const modelName = this.modelNames[(attempt + dayNumber) % this.modelNames.length];
@@ -61,6 +62,7 @@ export class ObstacleSpawner {
       mesh.rotation.y = Math.random() * Math.PI * 2;
 
       const finalY = this.findSurfaceY(x, z, floorY, floorMeshes, raycaster);
+      if (finalY === undefined) continue;
       mesh.position.set(x, finalY, z);
       mesh.updateMatrixWorld(true);
 
@@ -68,9 +70,17 @@ export class ObstacleSpawner {
       mesh.position.y += finalY - boxBeforeLift.min.y;
       mesh.updateMatrixWorld(true);
 
+      const bounds = new THREE.Box3().setFromObject(mesh);
+      if (sceneBounds && (bounds.min.x < sceneBounds.min.x || bounds.max.x > sceneBounds.max.x || bounds.min.z < sceneBounds.min.z || bounds.max.z > sceneBounds.max.z)) continue;
+      if (protectedPositions.some(point => {
+        const closestX = THREE.MathUtils.clamp(point.x, bounds.min.x, bounds.max.x);
+        const closestZ = THREE.MathUtils.clamp(point.z, bounds.min.z, bounds.max.z);
+        return Math.hypot(closestX - point.x, closestZ - point.z) < SPAWN_CLEAR_RADIUS;
+      })) continue;
+      if (obstacles.some(other => bounds.clone().expandByScalar(0.2).intersectsBox(other.bounds))) continue;
       obstacles.push({
         mesh,
-        bounds: new THREE.Box3().setFromObject(mesh),
+        bounds,
         modelName,
       });
     }
@@ -90,13 +100,6 @@ export class ObstacleSpawner {
 
     const half = (GRID_SIZE * CELL_SIZE) * 0.45 - 2.0;
     return { minX: -half, maxX: half, minZ: -half, maxZ: half };
-  }
-
-  private isClearOfStarts(x: number, z: number) {
-    return (
-      Math.hypot(x - ROBOT_START.x, z - ROBOT_START.z) >= SPAWN_CLEAR_RADIUS &&
-      Math.hypot(x - HUSKY_START.x, z - HUSKY_START.z) >= SPAWN_CLEAR_RADIUS
-    );
   }
 
   private prepareModel(mesh: THREE.Object3D, modelName: string) {
@@ -135,6 +138,9 @@ export class ObstacleSpawner {
     const intersects = raycaster.intersectObjects(floorMeshes, true);
     const floorHit = intersects.find((hit) => Math.abs(hit.point.y - floorY) < 0.22);
 
-    return floorHit?.point.y ?? floorY;
+    if (!floorHit) return undefined;
+    raycaster.set(new THREE.Vector3(x, floorY + 0.05, z), new THREE.Vector3(0, 1, 0));
+    const overhead = raycaster.intersectObjects(floorMeshes, true)[0];
+    return overhead && overhead.distance < 0.3 ? undefined : floorHit.point.y;
   }
 }

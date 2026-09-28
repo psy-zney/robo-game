@@ -1,4 +1,4 @@
-import { BATTERY_DRAIN_FACTOR, MAX_BATTERY, MOVE_SPEED, STORAGE_CAPACITY } from '../utils/constants';
+import { BATTERY_DRAIN_MOVE, MAX_BATTERY, STORAGE_CAPACITY } from '../utils/constants';
 import { SaveManager } from './SaveManager';
 
 /**
@@ -51,6 +51,8 @@ export class GameState {
       version: '1.0.0',
       timestamp: Date.now(),
       playtime: 0,
+      completedDays: existing?.completedDays,
+      pendingReport: existing?.pendingReport,
     });
   }
 
@@ -70,9 +72,7 @@ export class GameState {
    * @param moving - Whether robot is currently moving
    */
   public drainBattery(deltaTime: number, moving: boolean) {
-    const speedFactor = moving ? MOVE_SPEED : MOVE_SPEED * 0.25;
-    const drainAmount = deltaTime * 40 * BATTERY_DRAIN_FACTOR * speedFactor;
-    this.battery = Math.max(0, this.battery - drainAmount);
+    if (moving) this.battery = Math.max(0, this.battery - deltaTime * BATTERY_DRAIN_MOVE);
   }
 
   /**
