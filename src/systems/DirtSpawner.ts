@@ -2,7 +2,16 @@ import * as THREE from 'three';
 import { DIRT_INTERACT_DIST, DIRT_PLANE_SIZE, getLevelTuning } from '../utils/constants';
 
 export type CleanMethod = 'sweep' | 'mop' | 'sweep_then_mop';
-export const DIRT_LABELS: Record<string, string> = { Dust: 'Bụi khô', 'Thick Dust': 'Bụi dày', 'Coffee Spill': 'Cà phê', 'Sauce Stain': 'Sốt cà chua', 'Stubborn Dirt': 'Bùn bám', 'Heavy Grime': 'Vết bám dày' };
+export const DIRT_LABELS: Record<string, string> = {
+  Dust: 'Bụi khô',
+  'Thick Dust': 'Bụi dày',
+  'Coffee Spill': 'Cà phê',
+  'Sauce Stain': 'Sốt cà chua',
+  'Stubborn Dirt': 'Bùn bám',
+  'Heavy Grime': 'Vết bám dày',
+  'Matcha Cream': 'Kem Matcha',
+  'Burnt Flour': 'Bột cháy khét',
+};
 
 export interface DirtConfig {
   name: string;
@@ -74,6 +83,26 @@ export const DIRT_CONFIGS: DirtConfig[] = [
     minDay: 5,
     sizeRange: [1.12, 1.62],
     tint: 0x4e463b,
+    opacity: 0.92,
+  },
+  {
+    name: 'Matcha Cream',
+    texture: '/image/coffeSpill.png',
+    method: 'mop',
+    requiredActions: 2,
+    minDay: 6,
+    sizeRange: [0.90, 1.30],
+    tint: 0x5a8247,
+    opacity: 0.88,
+  },
+  {
+    name: 'Burnt Flour',
+    texture: '/image/dirty1.jpg',
+    method: 'sweep_then_mop',
+    requiredActions: 3,
+    minDay: 9,
+    sizeRange: [1.05, 1.55],
+    tint: 0x362c26,
     opacity: 0.92,
   },
 ];

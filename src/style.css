@@ -1249,3 +1249,156 @@ legend {
   transition: none !important;
   animation: none !important;
 }
+
+/* ───────────────────────── COMBO, SCORE & STARS ───────────────────────── */
+.hud-score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.68rem;
+  margin-top: 0.45rem;
+  color: var(--ink);
+}
+.hud-score-row b {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.overall-track {
+  width: 100%;
+  height: 4px;
+  background: var(--paper);
+  margin-top: 0.45rem;
+  border-radius: 2px;
+  overflow: hidden;
+}
+#overall-progress {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, #2f6b4e 100%);
+  transition: width 0.25s ease-out;
+}
+
+/* Combo display banner */
+.hud-combo {
+  position: absolute;
+  top: 5.5rem;
+  left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  background: rgba(23, 21, 18, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(220, 160, 50, 0.4);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25), 0 0 12px rgba(220, 160, 50, 0.2);
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  color: #fff;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.95);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  z-index: 10;
+}
+.hud-combo.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.combo-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #f5b041;
+}
+#combo-count {
+  font-size: 1.35rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #f8c471;
+  text-shadow: 0 0 10px rgba(245, 176, 65, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+.combo-timer-track {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  margin-top: 0.3rem;
+  border-radius: 2px;
+  overflow: hidden;
+}
+#combo-timer-bar {
+  width: 100%;
+  height: 100%;
+  background: #f5b041;
+}
+
+/* Floating score popup */
+.score-popup {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #f7dc6f;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), 0 0 14px rgba(245, 176, 65, 0.7);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 20;
+}
+.score-popup.flash {
+  animation: scoreFloat 0.75s cubic-bezier(0.2, 0.8, 0.25, 1) forwards;
+}
+
+@keyframes scoreFloat {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -20%) scale(0.7);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+  70% {
+    opacity: 0.9;
+    transform: translate(-50%, -80%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -110%) scale(0.9);
+  }
+}
+
+/* Story report stars & score */
+.stat-score {
+  font-weight: 600;
+  color: var(--accent);
+}
+.stat-stars {
+  font-size: 1.4rem;
+  letter-spacing: 0.18em;
+  color: #d4ac0d;
+  margin-top: 0.35rem;
+}
+
+/* Journal stars & stats */
+.journal-stats {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  font-size: 0.72rem;
+  margin-top: 0.8rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--line);
+  color: var(--muted);
+}
+.journal-stars {
+  font-size: 0.95rem;
+  letter-spacing: 0.1em;
+  color: #d4ac0d;
+}
+.journal-day-stars {
+  color: #d4ac0d;
+  font-size: 0.75rem;
+  margin-left: 0.3rem;
+  letter-spacing: 0.05em;
+}

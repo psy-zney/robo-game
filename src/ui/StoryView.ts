@@ -32,6 +32,17 @@ export function renderStory(container: HTMLElement, story: DayStory) {
   });
   container.append(dialogue, paragraph(story.robotNote, 'robot-note'));
 }
+
+function renderStars(count: number): string {
+  return '★'.repeat(count) + '☆'.repeat(Math.max(0, 3 - count));
+}
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 export function showDayReport(report: DayReport) {
   const story = getDayStory(report.day);
   setText('story-day', `NGÀY ${String(report.day).padStart(2, '0')}`);
@@ -42,10 +53,38 @@ export function showDayReport(report: DayReport) {
   );
   setText('story-deck', story.deck);
   renderStory(document.getElementById('story-content')!, story);
-  setText(
-    'story-stats',
-    `${report.stains} vết đã sạch · ${report.dust} hạt bụi đã thu · Pin còn ${Math.round(report.battery)}%`,
-  );
+
+  // Build stats with enhanced info
+  const statsEl = document.getElementById('story-stats')!;
+  statsEl.replaceChildren();
+
+  const baseLine = document.createElement('p');
+  baseLine.textContent = `${report.stains} vết đã sạch · ${report.dust} hạt bụi đã thu · Pin còn ${Math.round(report.battery)}%`;
+  statsEl.append(baseLine);
+
+  // Score and combo info
+  if (report.score !== undefined) {
+    const scoreLine = document.createElement('p');
+    scoreLine.className = 'stat-score';
+    scoreLine.textContent = `Điểm: ${report.score.toLocaleString()}`;
+    if (report.maxCombo && report.maxCombo > 1) {
+      scoreLine.textContent += ` · Combo tối đa: ×${report.maxCombo}`;
+    }
+    if (report.elapsedTime !== undefined) {
+      scoreLine.textContent += ` · Thời gian: ${formatTime(report.elapsedTime)}`;
+    }
+    statsEl.append(scoreLine);
+  }
+
+  // Star rating
+  if (report.stars !== undefined) {
+    const starLine = document.createElement('p');
+    starLine.className = 'stat-stars';
+    starLine.textContent = renderStars(report.stars);
+    starLine.setAttribute('aria-label', `${report.stars} trên 3 sao`);
+    statsEl.append(starLine);
+  }
+
   document.getElementById('story-screen')?.classList.add('active');
   document.getElementById('pause-screen')?.classList.remove('active');
   document.getElementById('next-day-btn')?.focus({ preventScroll: true });
@@ -76,6 +115,18 @@ export function hydrateJournal() {
     const copy = document.createElement('div');
     copy.className = 'journal-copy';
     renderStory(copy, story);
+
+    // Add saved stats if available
+    const dayStats = save?.dayStats?.[day];
+    if (dayStats) {
+      const statsDiv = document.createElement('div');
+      statsDiv.className = 'journal-stats';
+      statsDiv.innerHTML = `<span class="journal-stars">${renderStars(dayStats.stars)}</span>
+        <span>Điểm: ${dayStats.score.toLocaleString()}</span>
+        ${dayStats.maxCombo > 1 ? `<span>Combo: ×${dayStats.maxCombo}</span>` : ''}`;
+      copy.append(statsDiv);
+    }
+
     entry.append(tag, title, paragraph(story.deck, 'story-deck'), copy);
     days
       .querySelectorAll('button')
@@ -104,7 +155,19 @@ export function hydrateJournal() {
       .forEach((day) => {
         const button = document.createElement('button');
         button.dataset.day = String(day);
-        button.textContent = `Ngày ${String(day).padStart(2, '0')}`;
+
+        const dayLabel = document.createTextNode(`Ngày ${String(day).padStart(2, '0')} `);
+        button.append(dayLabel);
+
+        // Show stars inline
+        const dayStarData = save?.dayStats?.[day];
+        if (dayStarData) {
+          const starSpan = document.createElement('span');
+          starSpan.className = 'journal-day-stars';
+          starSpan.textContent = renderStars(dayStarData.stars);
+          button.append(starSpan);
+        }
+
         const label = document.createElement('small');
         label.textContent = getDayStory(day).title;
         button.append(label);
@@ -113,4 +176,8 @@ export function hydrateJournal() {
       });
     read(Math.max(...completed));
   }
+}
+
+export function hydrateHub() {
+  // Re-exported for use by main.ts; keep backward compatibility.
 }

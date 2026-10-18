@@ -53,6 +53,7 @@ export class GameState {
       playtime: 0,
       completedDays: existing?.completedDays,
       pendingReport: existing?.pendingReport,
+      dayStats: existing?.dayStats,
     });
   }
 

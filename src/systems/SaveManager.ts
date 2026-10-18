@@ -11,6 +11,7 @@ export interface SaveData {
   playtime: number; // Total playtime in seconds
   completedDays?: number[];
   pendingReport?: DayReport;
+  dayStats?: Record<number, { stars: number; score: number; maxCombo: number; elapsedTime?: number }>;
 }
 
 export interface SaveMetadata {
@@ -67,6 +68,7 @@ export class SaveManager {
         playtime,
         completedDays: this.validateCompletedDays(parsed.completedDays, highestDay),
         pendingReport: this.validateReport(parsed.pendingReport, day),
+        dayStats: this.validateDayStats(parsed.dayStats),
       };
 
       console.log(`✅ Loaded save: Day ${day}, Battery ${battery}%, Version ${version}`);
@@ -240,7 +242,49 @@ export class SaveManager {
       playtime: this.validateNumber(data.playtime, 0, 0, 31536000),
       completedDays: this.validateCompletedDays(data.completedDays, data.highestDay ?? 1),
       pendingReport: this.validateReport(data.pendingReport, data.day ?? 1),
+      dayStats: this.validateDayStats(data.dayStats),
     };
+  }
+
+  public static recordDayStats(
+    day: number,
+    stats: { stars: number; score: number; maxCombo: number; elapsedTime?: number },
+  ) {
+    const current = this.load();
+    if (!current) return;
+    const dayStats = { ...(current.dayStats ?? {}) };
+    const prev = dayStats[day];
+    if (
+      !prev ||
+      stats.stars > prev.stars ||
+      (stats.stars === prev.stars && stats.score > prev.score)
+    ) {
+      dayStats[day] = stats;
+    }
+    this.save({
+      ...current,
+      dayStats,
+    });
+  }
+
+  private static validateDayStats(
+    stats: unknown,
+  ): Record<number, { stars: number; score: number; maxCombo: number; elapsedTime?: number }> | undefined {
+    if (!stats || typeof stats !== 'object') return undefined;
+    const result: Record<number, { stars: number; score: number; maxCombo: number; elapsedTime?: number }> = {};
+    for (const [key, val] of Object.entries(stats as Record<string, unknown>)) {
+      const dayNum = Number(key);
+      if (!Number.isNaN(dayNum) && dayNum >= 1 && dayNum <= 1000 && val && typeof val === 'object') {
+        const v = val as { stars?: unknown; score?: unknown; maxCombo?: unknown; elapsedTime?: unknown };
+        result[dayNum] = {
+          stars: this.validateNumber(v.stars, 0, 0, 3),
+          score: this.validateNumber(v.score, 0, 0, 10000000),
+          maxCombo: this.validateNumber(v.maxCombo, 1, 1, 100),
+          elapsedTime: typeof v.elapsedTime === 'number' ? v.elapsedTime : undefined,
+        };
+      }
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
   }
 
   private static validateCompletedDays(days: unknown, highestDay: number): number[] {

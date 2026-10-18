@@ -2,6 +2,7 @@ import { setText } from './StoryView';
 
 export class UIManager {
   private notificationTimer = 0;
+  private comboFadeTimer = 0;
   public update(
     battery: number,
     cleaned: number,
@@ -37,6 +38,39 @@ export class UIManager {
     setText('difficulty', `${difficulty.toFixed(1)}×`);
     setText('camera-settings', cameraSettings);
   }
+
+  public updateScore(score: number, elapsedTime: number) {
+    setText('score', String(score));
+    const minutes = Math.floor(elapsedTime / 60);
+    const seconds = Math.floor(elapsedTime % 60);
+    setText('elapsed-time', `${minutes}:${String(seconds).padStart(2, '0')}`);
+  }
+
+  public updateCombo(combo: number, comboTimer: number, comboTimeout: number) {
+    const comboEl = document.getElementById('combo-display');
+    if (!comboEl) return;
+
+    if (combo > 1) {
+      comboEl.classList.add('visible');
+      setText('combo-count', `×${combo}`);
+      const comboBar = document.getElementById('combo-timer-bar');
+      if (comboBar) {
+        comboBar.style.width = `${Math.max(0, (comboTimer / comboTimeout) * 100)}%`;
+      }
+      this.comboFadeTimer = 0.6;
+    } else if (this.comboFadeTimer > 0) {
+      this.comboFadeTimer -= 1 / 60;
+      if (this.comboFadeTimer <= 0) comboEl.classList.remove('visible');
+    } else {
+      comboEl.classList.remove('visible');
+    }
+  }
+
+  public updateProgressBar(percent: number) {
+    const bar = document.getElementById('overall-progress');
+    if (bar) bar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  }
+
   public updateActionPrompt(sweep: boolean, mop: boolean, hint?: string) {
     setText(
       'action',
@@ -74,6 +108,16 @@ export class UIManager {
       () => document.getElementById('toast')?.classList.remove('visible'),
       2600,
     );
+  }
+
+  /** Flash score popup at center screen on combo clean. */
+  public flashScorePopup(points: number, combo: number) {
+    const el = document.getElementById('score-popup');
+    if (!el) return;
+    el.textContent = combo > 1 ? `+${points} ×${combo}` : `+${points}`;
+    el.classList.remove('flash');
+    void el.offsetWidth; // force reflow
+    el.classList.add('flash');
   }
 }
 function translateStatus(status: string) {

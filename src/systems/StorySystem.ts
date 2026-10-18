@@ -4,6 +4,10 @@ export interface DayReport {
   stains: number;
   dust: number;
   battery: number;
+  score?: number;
+  stars?: number;
+  maxCombo?: number;
+  elapsedTime?: number;
 }
 export interface DayStory {
   title: string;
@@ -21,6 +25,7 @@ export interface DayStory {
 }
 
 const stories: DayStory[] = [
+  /* ───────── DAY 1 ───────── */
   {
     title: 'Một thành viên mới',
     mood: 'vui',
@@ -28,8 +33,8 @@ const stories: DayStory[] = [
     introStatus: 'An vừa đặt tên cho bạn: Rô. Bắp chưa đồng ý.',
     deck: 'Bắp tưởng gia đình vừa nhận nuôi một chiếc đĩa biết chạy.',
     paragraphs: [
-      'An mang bạn về trong một thùng giấy, ghi lên nắp: “Trợ lý đầu tiên của tiệm bánh tương lai”. Minh kiểm tra chổi quay. Bắp kiểm tra bằng cách sủa vào thùng đúng mười một lần.',
-      'Sau ca dọn, sàn sạch đến mức Bắp nhìn thấy bóng mình và sủa thêm lần thứ mười hai. Tí lén tha miếng bìa làm biển “phòng riêng”. An bật cười: căn nhà lâu rồi mới đông vui như vậy.',
+      'An mang bạn về trong một thùng giấy, ghi lên nắp: "Trợ lý đầu tiên của tiệm bánh tương lai". Minh kiểm tra chổi quay. Bắp kiểm tra bằng cách sủa vào thùng đúng mười một lần.',
+      'Sau ca dọn, sàn sạch đến mức Bắp nhìn thấy bóng mình và sủa thêm lần thứ mười hai. Tí lén tha miếng bìa làm biển "phòng riêng". An bật cười: căn nhà lâu rồi mới đông vui như vậy.',
     ],
     dialogue: [
       ['An', 'Em gọi nó là Rô nhé.'],
@@ -42,15 +47,16 @@ const stories: DayStory[] = [
     difficultyMultiplier: 0.8,
     dirtWeights: { Dust: 1.2, 'Thick Dust': 0.6 },
   },
+  /* ───────── DAY 2 ───────── */
   {
     title: 'Cà phê nguội trên sàn',
     mood: 'buồn',
     mission: 'Giữ R để lau cà phê. Bụi khô vẫn cần hút bằng E.',
     introStatus: 'Minh làm đổ cà phê khi đọc một tin nhắn.',
-    deck: 'Có những buổi sáng, một tiếng “ừ” cũng nặng.',
+    deck: 'Có những buổi sáng, một tiếng "ừ" cũng nặng.',
     paragraphs: [
-      'Xưởng sửa máy thông báo cắt ca. Minh đọc đi đọc lại tin nhắn, tay vô tình hất cốc cà phê. An hỏi có chuyện gì. Anh nói “không sao”, rồi đi ra ngoài với đôi giày chưa buộc dây.',
-      'Khi bạn lau xong, An tìm thấy bản tính tiền mua lò bánh trong túi áo Minh. Anh đã ghi “để dành cho An” ở góc giấy. Tối ấy cô pha một cốc mới, đặt cạnh anh và ngồi xuống. Không ai vội nói.',
+      'Xưởng sửa máy thông báo cắt ca. Minh đọc đi đọc lại tin nhắn, tay vô tình hất cốc cà phê. An hỏi có chuyện gì. Anh nói "không sao", rồi đi ra ngoài với đôi giày chưa buộc dây.',
+      'Khi bạn lau xong, An tìm thấy bản tính tiền mua lò bánh trong túi áo Minh. Anh đã ghi "để dành cho An" ở góc giấy. Tối ấy cô pha một cốc mới, đặt cạnh anh và ngồi xuống. Không ai vội nói.',
     ],
     dialogue: [
       ['An', 'Nếu chưa muốn kể thì mình cứ ngồi thôi.'],
@@ -63,6 +69,7 @@ const stories: DayStory[] = [
     difficultyMultiplier: 1,
     dirtWeights: { 'Coffee Spill': 1.6, Dust: 0.8, 'Thick Dust': 0.7 },
   },
+  /* ───────── DAY 3 ───────── */
   {
     title: 'Vụ án sốt cà chua',
     mood: 'vui',
@@ -70,7 +77,7 @@ const stories: DayStory[] = [
     introStatus: 'Bắp có dấu đỏ trên mũi. Tí yêu cầu luật sư.',
     deck: 'Ba nghi phạm, một chai sốt, không ai nhận tội.',
     paragraphs: [
-      'An thử bán bánh mặn từ căn bếp nhỏ. Chai sốt biến mất, rồi xuất hiện dưới bàn với một đường đỏ chạy dài tới chỗ Bắp ngủ. Minh lập “ban điều tra”, dùng chiếc muỗng làm micro.',
+      'An thử bán bánh mặn từ căn bếp nhỏ. Chai sốt biến mất, rồi xuất hiện dưới bàn với một đường đỏ chạy dài tới chỗ Bắp ngủ. Minh lập "ban điều tra", dùng chiếc muỗng làm micro.',
       'Sau ca dọn, thủ phạm được tìm thấy: chính Minh đặt chai lên mép bàn lúc chụp ảnh bánh. Bắp chỉ liếm chứng cứ. Tí được tuyên trắng án, nhưng vẫn giữ chiếc bánh vụn làm phí tổn tinh thần.',
     ],
     dialogue: [
@@ -84,6 +91,7 @@ const stories: DayStory[] = [
     difficultyMultiplier: 1.2,
     dirtWeights: { 'Sauce Stain': 1.3, 'Coffee Spill': 0.8, 'Thick Dust': 0.9 },
   },
+  /* ───────── DAY 4 ───────── */
   {
     title: 'Dấu chân về muộn',
     mood: 'buồn',
@@ -105,6 +113,7 @@ const stories: DayStory[] = [
     difficultyMultiplier: 1.3,
     dirtWeights: { 'Stubborn Dirt': 1.6, Dust: 0.6, 'Thick Dust': 0.6 },
   },
+  /* ───────── DAY 5 ───────── */
   {
     title: 'Mẻ bánh đầu tiên',
     mood: 'vui',
@@ -112,7 +121,7 @@ const stories: DayStory[] = [
     introStatus: 'Tiệm bánh tại gia có đơn đầu tiên. Cả nhà vào ca.',
     deck: 'Đơn đầu tiên: sáu chiếc bánh. Tình nguyện viên: hơi quá đông.',
     paragraphs: [
-      'An nhận đơn đầu tiên từ hàng xóm. Minh cân bột bằng chiếc cân vừa sửa. Bắp nằm canh lò với vẻ rất chuyên nghiệp. Tí phụ trách “kiểm định” vụn bánh, không ai mời nhưng vẫn đến đúng giờ.',
+      'An nhận đơn đầu tiên từ hàng xóm. Minh cân bột bằng chiếc cân vừa sửa. Bắp nằm canh lò với vẻ rất chuyên nghiệp. Tí phụ trách "kiểm định" vụn bánh, không ai mời nhưng vẫn đến đúng giờ.',
       'Sau khi bạn dọn hết lớp bột bám, điện thoại báo khách đặt thêm mười hai chiếc. An nhảy lên. Minh nhảy theo, đập đầu vào cánh tủ. Tiệm bánh chưa có biển hiệu, nhưng đã có tiếng cười.',
     ],
     dialogue: [
@@ -126,6 +135,7 @@ const stories: DayStory[] = [
     difficultyMultiplier: 1.5,
     dirtWeights: { 'Heavy Grime': 1.8, 'Stubborn Dirt': 1, 'Thick Dust': 0.7 },
   },
+  /* ───────── DAY 6 ───────── */
   {
     title: 'Chiếc ghế cạnh cửa sổ',
     mood: 'buồn',
@@ -153,6 +163,7 @@ const stories: DayStory[] = [
     },
     specialEvents: ['husky_aggressive'],
   },
+  /* ───────── DAY 7 ───────── */
   {
     title: 'Sinh nhật không có nến',
     mood: 'vui',
@@ -177,6 +188,7 @@ const stories: DayStory[] = [
       'Stubborn Dirt': 0.8,
     },
   },
+  /* ───────── DAY 8 ───────── */
   {
     title: 'Chiếc hộp trên gác',
     mood: 'buồn',
@@ -185,7 +197,7 @@ const stories: DayStory[] = [
     deck: 'Có thứ cất lâu đến mức người ta tưởng mình đã quên.',
     paragraphs: [
       'Minh đóng thêm kệ cho góc làm bánh. Trên gác rơi xuống hộp ảnh cũ: mẹ An đứng trước một cửa tiệm nhỏ, tay cầm chiếc bánh cháy cạnh. An im lặng. Cô từng nghĩ mở tiệm sẽ khiến mình bớt nhớ mẹ.',
-      'Bạn hút hết bụi dưới kệ. An chọn một tấm ảnh đặt lên trên, cạnh cuốn sổ công thức của bà Liên. Minh không nói “đừng buồn”. Anh đóng thêm một móc nhỏ để treo chiếc tạp dề của mẹ.',
+      'Bạn hút hết bụi dưới kệ. An chọn một tấm ảnh đặt lên trên, cạnh cuốn sổ công thức của bà Liên. Minh không nói "đừng buồn". Anh đóng thêm một móc nhỏ để treo chiếc tạp dề của mẹ.',
     ],
     dialogue: [
       ['An', 'Em sợ mình làm không ngon bằng mẹ.'],
@@ -197,6 +209,7 @@ const stories: DayStory[] = [
     difficultyMultiplier: 1.8,
     dirtWeights: { 'Thick Dust': 2.2, Dust: 1.5, 'Stubborn Dirt': 0.5 },
   },
+  /* ───────── DAY 9 ───────── */
   {
     title: 'Cả nhà trú mưa',
     mood: 'vui',
@@ -223,6 +236,7 @@ const stories: DayStory[] = [
     },
     specialEvents: ['reduced_battery'],
   },
+  /* ───────── DAY 10 ───────── */
   {
     title: 'Một chỗ để trở về',
     mood: 'ấm áp',
@@ -230,7 +244,7 @@ const stories: DayStory[] = [
     introStatus: 'Bà Liên về nhà. Buổi mở bán nhỏ cũng bắt đầu.',
     deck: 'Căn nhà hôm nay bừa nhất. Cũng đủ người nhất.',
     paragraphs: [
-      'Bà Liên trở về đúng buổi mở bán bánh tại nhà. Bột, cà phê và dấu giày nối nhau qua sàn. Bắp chạy theo bà như sợ bà đi mất. Minh mặc chiếc áo đi làm mới, còn An run tay khi treo biển “Bánh của An”.',
+      'Bà Liên trở về đúng buổi mở bán bánh tại nhà. Bột, cà phê và dấu giày nối nhau qua sàn. Bắp chạy theo bà như sợ bà đi mất. Minh mặc chiếc áo đi làm mới, còn An run tay khi treo biển "Bánh của An".',
       'Bạn về trạm khi vết cuối cùng đã sạch. Bà nếm bánh, chê hơi ngọt rồi ăn hết. An nhìn bức ảnh mẹ trên kệ và khóc một chút. Minh nắm tay cô. Tiệm chưa lớn, cuộc sống chưa hết khó, nhưng mỗi người đều có chỗ của mình ở đây.',
     ],
     dialogue: [
@@ -252,12 +266,255 @@ const stories: DayStory[] = [
     },
     specialEvents: ['husky_aggressive', 'reduced_battery'],
   },
+
+  /* ═══════════════════════════════════════════════════════════════
+   *  CHAPTER 2 — Days 11‒20: "Tiệm bánh lớn dần"
+   * ═══════════════════════════════════════════════════════════════ */
+
+  /* ───────── DAY 11 ───────── */
+  {
+    title: 'Đơn bánh xa nhất',
+    mood: 'vui',
+    mission: 'Hộp chứa nhỏ hơn (10). Về trạm đổ bụi thường xuyên.',
+    introStatus: 'Một đơn hàng từ bên kia sông. Bắp xung phong giao.',
+    deck: 'Khoảng cách xa nhất Bắp từng đi: từ bếp ra cổng.',
+    paragraphs: [
+      'An nhận đơn từ một quán cà phê nhỏ bên kia cầu. Minh tình nguyện chạy xe, nhưng Bắp cứ ngồi chắn đúng cổng, đuôi vẫy như cánh quạt đến khi được leo lên yên sau. Tí nhìn theo với vẻ mặt "ta không thèm đi".',
+      'Khi hai người trở về, quán cà phê đã đặt thêm hai đợt. An xoa tay, mắt sáng hơn bóng đèn bếp. Minh lẳng lặng ghi thêm một dòng vào cuốn sổ tay nhỏ mà anh không cho ai đọc.',
+    ],
+    dialogue: [
+      ['Minh', 'Bắp tưởng đi chơi chứ không đi giao.'],
+      ['An', 'Chí ít nó giữ bánh không rơi. Bằng cách ngồi lên.'],
+      ['Minh', '…Đó chính xác là vấn đề.'],
+    ],
+    robotNote: 'Ghi chú của Rô: hộp chứa nhỏ thì về trạm nhiều hơn. Giống người — đi xa rồi phải biết đường về.',
+    dustColor: 0xb0a58d,
+    difficultyMultiplier: 2.1,
+    dirtWeights: { 'Thick Dust': 1.6, Dust: 1.2, 'Coffee Spill': 1.0 },
+    specialEvents: ['small_storage'],
+  },
+  /* ───────── DAY 12 ───────── */
+  {
+    title: 'Ca đêm của robot',
+    mood: 'buồn',
+    mission: 'Nhà tối. Tầm nhìn hạn chế. Dọn cẩn thận, đừng đâm vào đồ.',
+    introStatus: 'Cả nhà ngủ sớm. Chỉ còn Rô và tiếng mưa.',
+    deck: 'Có những đêm, im lặng cũng là một loại bầu bạn.',
+    paragraphs: [
+      'Hôm nay An mệt vì giao hai đợt bánh. Minh đau lưng sau một ngày sửa máy. Cả nhà tắt đèn lúc chín giờ. Bắp cuộn tròn dưới bàn, Tí biến mất trong góc tối quen thuộc.',
+      'Bạn dọn trong bóng tối chỉ với ánh đèn nhỏ từ trạm sạc. Khi ca xong, An lật mình trong giấc ngủ và lẩm bẩm "cảm ơn". Có thể cô mơ, có thể không. Rô ghi lại cả hai trường hợp.',
+    ],
+    dialogue: [
+      ['An', '(ngủ mơ) …thêm bơ…'],
+      ['Minh', '(ngáy nhẹ)'],
+    ],
+    robotNote: 'Ghi chú của Rô: nhà tối nhưng sàn vẫn bẩn. Có thứ không cần ánh sáng để biết mình cần làm gì.',
+    dustColor: 0x88806e,
+    difficultyMultiplier: 2.2,
+    dirtWeights: { 'Stubborn Dirt': 1.5, 'Heavy Grime': 1.3, Dust: 0.8 },
+    specialEvents: ['dim_room'],
+  },
+  /* ───────── DAY 13 ───────── */
+  {
+    title: 'Chiếc lò mới',
+    mood: 'vui',
+    mission: 'Bụi xây dựng rất dày. Pin tiêu nhanh hơn. Combo giúp đỡ!',
+    introStatus: 'Minh lắp xong chiếc lò mới. Bụi bay khắp nhà.',
+    deck: 'Lắp lò mất ba tiếng. Dọn bụi lò mất cả ca.',
+    paragraphs: [
+      'Minh mang về chiếc lò cũ từ xưởng, đã sửa lại hoàn toàn. An không tin mắt mình — nó đúng loại bà Liên từng nhắc. Quá trình lắp đặt tạo ra một đám mây bụi vĩ đại mà Bắp hít một hơi rồi hắt xì liền ba phát.',
+      'Sau ca dọn, An thử nướng mẻ đầu tiên trong lò mới. Mùi bơ lan ra khắp nhà. Bà Liên nhắn: "Bà ngửi thấy rồi". Tí xuất hiện đúng lúc mẻ bánh ra lò, hoàn toàn không phải trùng hợp.',
+    ],
+    dialogue: [
+      ['An', 'Anh sửa lò này lâu chưa?'],
+      ['Minh', 'Hai tháng. Xin đừng hỏi tiền phụ tùng.'],
+      ['An', '…Em sẽ trả bằng bánh. Nhiều bánh.'],
+    ],
+    robotNote: 'Ghi chú của Rô: bụi lò khó hút hơn bụi thường. Nhưng mùi bánh sau đó làm cảm biến rất vui.',
+    dustColor: 0xc4b89c,
+    difficultyMultiplier: 2.3,
+    dirtWeights: { 'Thick Dust': 2.5, 'Heavy Grime': 1.5, Dust: 1.0, 'Stubborn Dirt': 0.8 },
+    specialEvents: ['fast_drain'],
+  },
+  /* ───────── DAY 14 ───────── */
+  {
+    title: 'Cuộc đua dọn nhà',
+    mood: 'vui',
+    mission: 'Speed run! Robot nhanh hơn, sạc nhanh hơn. Hoàn thành thật nhanh!',
+    introStatus: 'Khách đến trong 5 phút. An: "DỌN! DỌN! DỌN!"',
+    deck: 'Tốc độ là nghệ thuật. Hoảng loạn cũng vậy.',
+    paragraphs: [
+      'An nhận tin khách sẽ đến xem tiệm sớm hơn dự kiến. Minh chạy cất đồ, Bắp chạy theo vì tưởng là trò chơi mới, Tí lẩn đi với vẻ bất mãn vì bị phá giấc.',
+      'Bạn chưa bao giờ dọn nhanh đến vậy. Khi khách bước vào, sàn sáng bóng, An cười tươi dù mồ hôi vẫn chưa khô. Khách bảo: "Nhà sạch quá, chắc robot giỏi lắm". Minh nháy mắt với bạn.',
+    ],
+    dialogue: [
+      ['An', 'CÒN BA PHÚT!'],
+      ['Minh', 'Em la to hơn máy hút bụi.'],
+      ['An', 'VÌ MÁY KHÔNG BIẾT HOẢNG!'],
+    ],
+    robotNote: 'Ghi chú của Rô: hôm nay chạy nhanh nhất kể từ ngày mở hộp. Hiệu suất: xuất sắc. Pin: gần tàn.',
+    dustColor: 0xa89b85,
+    difficultyMultiplier: 2.0,
+    dirtWeights: { Dust: 1.5, 'Coffee Spill': 1.2, 'Thick Dust': 1.0 },
+    specialEvents: ['speed_boost', 'fast_charge'],
+  },
+  /* ───────── DAY 15 ───────── */
+  {
+    title: 'Bắp ốm',
+    mood: 'buồn',
+    mission: 'Bắp nằm yên nhưng vết bẩn nhiều hơn. Cẩn thận với vết bám dày.',
+    introStatus: 'Bắp bỏ ăn sáng. Cả nhà lo lắng.',
+    deck: 'Một con chó im lặng đáng lo hơn mười con chó sủa.',
+    paragraphs: [
+      'Bắp không chạy đón cửa. Không sủa khi Minh mở tủ lạnh. Không tranh giành vụn bánh với Tí. An ôm nó, đo nhiệt. Minh gọi bác sĩ thú y, giọng bình tĩnh nhưng tay run.',
+      'Bạn dọn nhà thật nhẹ nhàng quanh chỗ Bắp nằm. Bác sĩ bảo chỉ cần nghỉ ngơi. Tối ấy Tí lần đầu nằm cạnh Bắp mà không bị đuổi. An nấu cháo cho cả nhà, bao gồm cả Rô — dù Rô không ăn được.',
+    ],
+    dialogue: [
+      ['An', 'Con có đau không, Bắp?'],
+      ['Minh', 'Nó liếm tay em là dấu hiệu tốt rồi.'],
+      ['Bà Liên', 'Cho nó uống nước ấm. Hồi xưa bà cũng hay bị.'],
+    ],
+    robotNote: 'Ghi chú của Rô: hôm nay dọn nhẹ tay hơn. Một cơ thể nhỏ cần được nghỉ, kể cả Bắp.',
+    dustColor: 0x9b8f79,
+    difficultyMultiplier: 2.4,
+    dirtWeights: { 'Heavy Grime': 2.0, 'Stubborn Dirt': 1.5, 'Coffee Spill': 1.0, 'Sauce Stain': 0.8 },
+    specialEvents: ['extra_stains'],
+  },
+  /* ───────── DAY 16 ───────── */
+  {
+    title: 'Đêm mất điện',
+    mood: 'buồn',
+    mission: 'Nhà rất tối, hộp chứa nhỏ (8). Dùng outline giúp nhận diện vết bẩn.',
+    introStatus: 'Điện cắt lúc nửa đêm. Bếp lò nguội, bánh phải chờ.',
+    deck: 'Mất điện thì không thấy đường. Nhưng cả nhà vẫn tìm thấy nhau.',
+    paragraphs: [
+      'Sấm đánh bay cầu chì. Minh mò mẫm tìm hộp cầu chì bằng đèn điện thoại. An gom nến, bà Liên kể chuyện hồi xưa cả xóm mất điện đến sáng. Bắp (đã khoẻ hơn) sủa vào bóng tối, rất dũng cảm, rất vô ích.',
+      'Bạn dọn nhà dưới ánh nến. Khi điện trở lại, mọi người chớp mắt nhìn nhau và cười — vì ai cũng bẩn hơn lúc mất điện. An bảo: "Bữa sau mất điện, mình cứ ngồi yên là sạch nhất."',
+    ],
+    dialogue: [
+      ['Bà Liên', 'Hồi xưa mất điện là cả xóm ra hiên nói chuyện.'],
+      ['An', 'Giờ cả xóm bật đèn pin soi vào nhau.'],
+      ['Minh', 'Đèn pin cũng hết. Anh đang dùng màn hình laptop.'],
+    ],
+    robotNote: 'Ghi chú của Rô: cảm biến hồng ngoại vẫn hoạt động. Nhưng thiếu điện thì ai cũng bình đẳng trước bóng tối.',
+    dustColor: 0x7d7565,
+    difficultyMultiplier: 2.5,
+    dirtWeights: { 'Stubborn Dirt': 1.8, Dust: 1.2, 'Thick Dust': 1.4, 'Heavy Grime': 1.0 },
+    specialEvents: ['dim_room', 'small_storage'],
+  },
+  /* ───────── DAY 17 ───────── */
+  {
+    title: 'Ngày hội chợ xóm',
+    mood: 'vui',
+    mission: 'Rất nhiều vết bẩn! Sạc chậm hơn. Giữ combo để kiếm điểm cao.',
+    introStatus: 'Hội chợ xóm kéo vào nhà. Sàn bếp thành chiến trường.',
+    deck: 'Mời cả xóm ăn bánh. Mời xong mới nhìn xuống sàn.',
+    paragraphs: [
+      'An dọn bàn ngoài sân cho hội chợ mini. Hàng xóm mang đồ ăn đến, trẻ con chạy qua bếp, Bắp đón khách bằng cách liếm tất cả mọi người. Sàn nhà trở thành bản đồ chiến trường với đủ loại vết.',
+      'Khi mọi người ra về, An và Minh đứng nhìn sàn. Im lặng ba giây. Rồi cả hai cùng nói: "Rô, giúp với!" Sau ca dọn, An nói đây là ngày vui nhất từ khi mở tiệm. Minh đồng ý, dù mệt đến mức ngủ gục trên ghế.',
+    ],
+    dialogue: [
+      ['Hàng xóm', 'Bánh nhà An ngon quá!'],
+      ['An', 'Cảm ơn cô! Dạ có thêm sốt cà—'],
+      ['Minh', '(thì thào) Em đừng nhìn xuống sàn.'],
+    ],
+    robotNote: 'Ghi chú của Rô: hôm nay nhiều người nhất. Bụi cũng nhiều nhất. Nhưng tiếng cười đã phủ kín mọi vết bẩn.',
+    dustColor: 0xb5a78f,
+    difficultyMultiplier: 2.6,
+    dirtWeights: {
+      'Coffee Spill': 1.8,
+      'Sauce Stain': 1.6,
+      'Heavy Grime': 1.4,
+      'Stubborn Dirt': 1.2,
+      'Thick Dust': 1.0,
+      Dust: 0.8,
+    },
+    specialEvents: ['extra_stains', 'slow_charge'],
+  },
+  /* ───────── DAY 18 ───────── */
+  {
+    title: 'Bức thư cũ',
+    mood: 'buồn',
+    mission: 'Vết bám dày và nhiều bùn. Robot chậm hơn do nhiều chướng ngại.',
+    introStatus: 'Dọn tủ cũ, An tìm thấy thư mẹ viết.',
+    deck: 'Có những lá thư chờ đúng người, đúng lúc.',
+    paragraphs: [
+      'An dọn chiếc tủ cũ để kê thêm kệ bánh. Trong ngăn kéo dưới cùng, cô tìm thấy một lá thư mẹ viết cho cô trước khi mất — bà dặn An mở khi nào mở tiệm. Cô đọc đi đọc lại, mỗi lần mắt lại đỏ thêm.',
+      'Minh không nói gì, chỉ đi pha trà. Bà Liên ngồi cạnh An, xoa lưng như cô còn nhỏ. Bắp lặng lẽ đặt đầu lên đùi An. Bạn dọn xong sàn và lùi về góc. Có những lúc, ở đúng chỗ là đủ.',
+    ],
+    dialogue: [
+      ['An', 'Mẹ viết: "Con sẽ làm được. Mẹ tin."'],
+      ['Bà Liên', 'Mẹ con nói đúng rồi, con.'],
+    ],
+    robotNote: 'Ghi chú của Rô: hôm nay ít hút bụi hơn nhưng ca dọn quan trọng nhất. Có thứ sạch không cần chổi.',
+    dustColor: 0x948a76,
+    difficultyMultiplier: 2.7,
+    dirtWeights: { 'Stubborn Dirt': 2.0, 'Heavy Grime': 1.8, 'Thick Dust': 1.2 },
+    specialEvents: ['slow_robot', 'extra_stains'],
+  },
+  /* ───────── DAY 19 ───────── */
+  {
+    title: 'Cơn bão lớn',
+    mood: 'buồn',
+    mission: 'Pin tiêu nhanh hơn 50%. Nhà tối. Dọn nhanh trước khi hết pin!',
+    introStatus: 'Bão số 3 đổ bộ. Mái dột, cửa sổ rung.',
+    deck: 'Bão thì sẽ qua. Mái thì cần vá. Bánh thì phải nướng.',
+    paragraphs: [
+      'Gió giật mạnh khiến cửa sổ bung chốt. Nước tràn vào, kéo theo bụi và lá. Minh vội vàng chèn ván, An ôm Bắp — con chó sợ sấm đến mức quên cả sủa. Bà Liên bình thản ngồi đan, nói: "Hồi trước có trận hơn thế."',
+      'Bạn dọn nhà trong gió và mưa hắt. Pin tiêu nhanh vì cảm biến phải hoạt động tối đa. Khi bão qua, cả nhà ngồi quanh bàn ăn mì gói, ánh nến lung linh. An nói nhỏ: "Nhà còn, mình còn."',
+    ],
+    dialogue: [
+      ['Minh', 'Mai anh sẽ vá mái.'],
+      ['An', 'Anh nói vậy ba lần rồi.'],
+      ['Minh', 'Lần này có bão ép.'],
+      ['Bà Liên', 'Lần trước cũng vậy, cháu.'],
+    ],
+    robotNote: 'Ghi chú của Rô: cảm biến ghi nhận gió cấp 9. Cảm biến cũng ghi nhận: cả nhà vẫn cười trong bão.',
+    dustColor: 0x857b69,
+    difficultyMultiplier: 2.8,
+    dirtWeights: {
+      'Heavy Grime': 2.2,
+      'Stubborn Dirt': 1.8,
+      'Sauce Stain': 1.0,
+      'Coffee Spill': 0.8,
+    },
+    specialEvents: ['fast_drain', 'dim_room', 'husky_aggressive'],
+  },
+  /* ───────── DAY 20 ───────── */
+  {
+    title: 'Biển hiệu mới',
+    mood: 'ấm áp',
+    mission: 'Thử thách cuối cùng: mọi thứ khó nhất. Sạc chậm, hộp nhỏ, vết nhiều.',
+    introStatus: 'Biển hiệu "Bánh của An" chính thức treo trước cửa.',
+    deck: 'Hai mươi ngày. Một tiệm bánh. Một gia đình. Một robot nhỏ rất bận.',
+    paragraphs: [
+      'Minh mang về tấm biển hiệu sơn tay: "Bánh của An — Nướng bằng tình yêu, dọn bằng robot". An cười đến chảy nước mắt. Bà Liên chỉnh lại chữ "robot" thành "Rô" bằng bút lông. Bắp ngồi nghiêm trang như đang dự lễ khai trương — vì bên cạnh có khay bánh.',
+      'Hôm nay nhà bừa nhất, nhưng cũng đông vui nhất. Bạn dọn xong ca cuối cùng của chương hai. Khi về trạm, An quỳ xuống nói với Rô: "Cảm ơn nhé. Ngày mai lại bẩn, nhưng mình sẽ lại dọn." Tí gật đầu từ xa. Bắp liếm ống kính camera của bạn. Mọi thứ đều tốt.',
+    ],
+    dialogue: [
+      ['An', 'Tiệm chính thức mở rồi!'],
+      ['Minh', 'Rô có muốn cổ phần không?'],
+      ['Bà Liên', 'Nó đã có cổ phần từ ngày đầu tiên rồi, cháu.'],
+    ],
+    robotNote: 'Ghi chú cuối chương 2: hai mươi ca dọn. Ba trăm sáu mươi vết bẩn. Một gia đình. Số liệu cuối cùng: đáng.',
+    dustColor: 0xa49680,
+    difficultyMultiplier: 3.0,
+    dirtWeights: {
+      'Heavy Grime': 2.0,
+      'Stubborn Dirt': 1.5,
+      'Sauce Stain': 1.3,
+      'Coffee Spill': 1.2,
+      'Thick Dust': 1.0,
+      Dust: 0.8,
+    },
+    specialEvents: ['extra_stains', 'slow_charge', 'small_storage', 'husky_aggressive', 'reduced_battery'],
+  },
 ];
 
 export function getDayStory(day: number): DayStory {
   const safeDay = Math.max(1, Math.floor(day));
   if (safeDay <= stories.length) return stories[safeDay - 1]!;
-  // Life goes on after the authored first chapter; daily moods continue alternating.
+  // Life goes on after the authored chapters; daily moods continue alternating.
   const source =
     stories[
       safeDay % 2 === 1
@@ -282,7 +539,7 @@ export function getDayStory(day: number): DayStory {
     paragraphs:
       safeDay % 2
         ? [
-            'Đơn bánh lại tới. Minh viết tên khách lên túi, Bắp ngủ ngay chỗ cần đứng, còn Tí tiếp tục nghề kiểm định không lương. An vừa làm vừa kể chuyện khách gọi chiếc bánh méo là “phiên bản giới hạn”.',
+            'Đơn bánh lại tới. Minh viết tên khách lên túi, Bắp ngủ ngay chỗ cần đứng, còn Tí tiếp tục nghề kiểm định không lương. An vừa làm vừa kể chuyện khách gọi chiếc bánh méo là "phiên bản giới hạn".',
             'Bạn dọn xong khi cả nhà chia chiếc bánh cuối. Bà Liên vẫn chê hơi ngọt. Lần này An cười trước khi bà kịp lấy chiếc thứ hai.',
           ]
         : [
@@ -307,6 +564,8 @@ export function getDayStory(day: number): DayStory {
     specialEvents: [
       ...(safeDay >= 15 && safeDay % 3 === 0 ? ['husky_aggressive'] : []),
       ...(safeDay >= 20 && safeDay % 4 === 0 ? ['reduced_battery'] : []),
+      ...(safeDay >= 25 && safeDay % 5 === 0 ? ['dim_room'] : []),
+      ...(safeDay >= 30 && safeDay % 6 === 0 ? ['fast_drain'] : []),
     ],
   };
 }

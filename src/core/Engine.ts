@@ -24,6 +24,8 @@ import {
   BATTERY_DRAIN_SWEEP,
   CHARGE_RADIUS,
   CHARGE_RATE,
+  COMBO_TIMEOUT,
+  getLevelTuning,
   HOME_SCALE,
   HUSKY_BARK_CHANCE,
   HUSKY_RANDOM_BITE_BASE,
@@ -54,6 +56,8 @@ export class Engine {
   private obstacleSpawner = new ObstacleSpawner();
   private dirtSpawner = new DirtSpawner();
   private dustSpawner: DustSpawner;
+  private ambientLight?: THREE.AmbientLight;
+  private dirLight?: THREE.DirectionalLight;
 
   private floorY = 0;
   private previousTime = performance.now();
@@ -168,16 +172,16 @@ export class Engine {
   }
 
   private setupLights() {
-    const ambientLight = new THREE.AmbientLight(0xf4eedf, 0.78);
-    this.scene.add(ambientLight);
+    this.ambientLight = new THREE.AmbientLight(0xf4eedf, 0.78);
+    this.scene.add(this.ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xf6f1e8, 0.72);
-    dirLight.position.set(5, 9, 5);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(1536, 1536);
-    dirLight.shadow.camera.near = 0.1;
-    dirLight.shadow.camera.far = 50;
-    this.scene.add(dirLight);
+    this.dirLight = new THREE.DirectionalLight(0xf6f1e8, 0.72);
+    this.dirLight.position.set(5, 9, 5);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.set(1536, 1536);
+    this.dirLight.shadow.camera.near = 0.1;
+    this.dirLight.shadow.camera.far = 50;
+    this.scene.add(this.dirLight);
   }
 
   private setupScene() {
@@ -515,6 +519,21 @@ export class Engine {
     this.dayMission = story.mission;
     this.dayIntroTimer = 3.5;
 
+    const tuning = getLevelTuning(day);
+    let storageCap = tuning.modifiers.storageCapacity;
+    if (hasSpecialEvent(day, 'small_storage')) {
+      storageCap = Math.max(6, Math.floor(storageCap * 0.75));
+    }
+    this.gameState.storageCapacity = storageCap;
+
+    if (this.ambientLight) {
+      let ambient = tuning.modifiers.ambientLight;
+      if (hasSpecialEvent(day, 'dim_room')) {
+        ambient *= 0.6;
+      }
+      this.ambientLight.intensity = ambient;
+    }
+
     if (hasSpecialEvent(day, 'reduced_battery')) {
       this.gameState.battery = Math.min(this.gameState.battery, MAX_BATTERY * 0.7);
     }
@@ -563,6 +582,7 @@ export class Engine {
       playtime: 0,
       completedDays: [...new Set([...(existing?.completedDays ?? []), ...(completedDay === undefined ? [] : [completedDay])])],
       pendingReport: this.pendingReport,
+      dayStats: existing?.dayStats,
     });
   }
 
@@ -640,6 +660,9 @@ export class Engine {
       story.title
     );
     this.uiManager.updateObjectives(this.mission.objectiveText);
+    this.uiManager.updateScore(this.mission.score, this.mission.elapsedTime);
+    this.uiManager.updateCombo(this.mission.combo, this.mission.comboTimer, COMBO_TIMEOUT);
+    this.uiManager.updateProgressBar(this.mission.progressPercent);
     const dx = this.chargeStationPosition.x - this.robot.group.position.x;
     const dz = this.chargeStationPosition.z - this.robot.group.position.z;
     this.uiManager.updateDockHint(Math.hypot(dx, dz), Math.atan2(dx, -dz) + this.robot.cameraGroup.rotation.y);
@@ -725,11 +748,14 @@ export class Engine {
 
     this.robot.getPosition(this.currentPosition);
 
-    let currentSpeed = MOVE_SPEED;
+    const tuning = getLevelTuning(this.day);
+    let speedMult = tuning.modifiers.speedMultiplier;
+    if (hasSpecialEvent(this.day, 'speed_boost')) speedMult *= 1.15;
+    let currentSpeed = MOVE_SPEED * speedMult;
     if (this.input.state.mop) {
-      currentSpeed = MOP_SPEED;
+      currentSpeed = MOP_SPEED * speedMult;
     } else if (this.input.state.suction) {
-      currentSpeed = SWEEP_SPEED;
+      currentSpeed = SWEEP_SPEED * speedMult;
     }
 
     const targetPosition = this.robot.update(deltaTime, this.input.state, currentSpeed);
@@ -796,7 +822,9 @@ export class Engine {
 
     if (this.isCharging) {
       const prevBattery = this.gameState.battery;
-      this.gameState.battery = Math.min(MAX_BATTERY, this.gameState.battery + CHARGE_RATE * deltaTime);
+      let chargeMult = tuning.modifiers.chargeMultiplier;
+      if (hasSpecialEvent(this.day, 'slow_charge')) chargeMult *= 0.7;
+      this.gameState.battery = Math.min(MAX_BATTERY, this.gameState.battery + CHARGE_RATE * chargeMult * deltaTime);
       if (prevBattery < MAX_BATTERY && this.gameState.battery >= MAX_BATTERY) {
         this.audioManager.playBatteryFull();
       }
@@ -832,7 +860,9 @@ export class Engine {
     }
 
     if (drainRate > 0) {
-      this.gameState.battery = Math.max(0, this.gameState.battery - drainRate * deltaTime);
+      let drainMult = tuning.modifiers.drainMultiplier;
+      if (hasSpecialEvent(this.day, 'fast_drain')) drainMult *= 1.3;
+      this.gameState.battery = Math.max(0, this.gameState.battery - drainRate * drainMult * deltaTime);
     }
 
     if (this.gameState.battery <= 0 && !this.isCharging) {
@@ -840,6 +870,7 @@ export class Engine {
       return 'Out of battery.';
     }
 
+    this.mission.tick(deltaTime);
     if (this.bumpTimer <= 0) status = this.handleCleaning(deltaTime, status);
     else status = 'Recovering...';
     this.mission.update(this.gameState.cleanedCells, this.dustSpawner.getTotalCount() - this.dustSpawner.getActiveCount(), docked);
@@ -991,6 +1022,8 @@ export class Engine {
       this.audioManager.playCollectItem();
       this.actionCooldown = this.ACTION_INTERVAL;
       currentStatus = 'Dust collected.';
+      const scoreGain = this.mission.registerClean(this.gameState.battery);
+      this.uiManager.flashScorePopup(scoreGain, this.mission.combo);
     }
 
     if (isSweeping && nearestDirt && !this.gameState.isStorageFull()) {
@@ -1004,6 +1037,8 @@ export class Engine {
       if (result === 'cleaned') {
         this.audioManager.playClean();
         this.gameState.cleanedCells += 1;
+        const scoreGain = this.mission.registerClean(this.gameState.battery);
+        this.uiManager.flashScorePopup(scoreGain, this.mission.combo);
         return 'Swept clean.';
       }
       this.audioManager.playSweep();
@@ -1020,6 +1055,8 @@ export class Engine {
       if (result === 'cleaned') {
         this.audioManager.playClean();
         this.gameState.cleanedCells += 1;
+        const scoreGain = this.mission.registerClean(this.gameState.battery);
+        this.uiManager.flashScorePopup(scoreGain, this.mission.combo);
         return 'Mopped clean.';
       }
       this.audioManager.playMop();
@@ -1032,7 +1069,24 @@ export class Engine {
   private completeDay() {
     if (this.isReadingStory) return;
     this.isReadingStory = true;
-    this.pendingReport = { day: this.day, stains: this.mission.spots, dust: this.mission.dust, battery: this.gameState.battery };
+    const tuning = getLevelTuning(this.day);
+    const starRating = this.mission.getStarRating(this.gameState.battery, tuning.modifiers.parTime);
+    this.pendingReport = {
+      day: this.day,
+      stains: this.mission.spots,
+      dust: this.mission.dust,
+      battery: this.gameState.battery,
+      score: this.mission.score,
+      stars: starRating.total,
+      maxCombo: this.mission.maxCombo,
+      elapsedTime: this.mission.elapsedTime,
+    };
+    SaveManager.recordDayStats(this.day, {
+      stars: starRating.total,
+      score: this.mission.score,
+      maxCombo: this.mission.maxCombo,
+      elapsedTime: this.mission.elapsedTime,
+    });
     this.audioManager.playDayComplete();
     this.audioManager.setMovement(false);
     this.input.reset();

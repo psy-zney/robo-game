@@ -149,7 +149,20 @@
         <h1 id="level-title">Một thành viên mới</h1>
         <p id="mission"></p>
         <p id="objectives" class="objectives">Đang chuẩn bị nhà…</p>
+        <div class="hud-score-row">
+          <span>Điểm: <b id="score">0</b></span>
+          <span>Thời gian: <b id="elapsed-time">0:00</b></span>
+        </div>
+        <div class="overall-track" aria-hidden="true" title="Tiến độ ca dọn">
+          <div id="overall-progress"></div>
+        </div>
       </section>
+      <div id="combo-display" class="hud-combo">
+        <span class="combo-label">COMBO</span>
+        <span id="combo-count">×2</span>
+        <div class="combo-timer-track"><div id="combo-timer-bar"></div></div>
+      </div>
+      <div id="score-popup" class="score-popup" aria-hidden="true"></div>
       <section class="hud-telemetry metal-panel" aria-label="Pin và hộp chứa">
         <div class="meter-row">
           <span>Pin</span><strong id="battery">100%</strong>
